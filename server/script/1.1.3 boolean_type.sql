@@ -1,0 +1,4 @@
+USE poc;
+CREATE TABLE ${TABLE_NAME} (id INT, name VARCHAR(11), is_active BOOLEAN);
+INSERT INTO ${TABLE_NAME} VALUES (1, 'John', TRUE), (2, 'Jane', FALSE), (3, 'David', TRUE);
+SELECT * FROM ${TABLE_NAME};

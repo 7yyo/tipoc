@@ -1,0 +1,11 @@
+USE poc;
+CREATE TABLE ${TABLE_NAME}
+(
+    c1 DATE,
+    c2 DATETIME,
+    c3 TIMESTAMP,
+    c4 TIME,
+    c5 YEAR
+);
+INSERT INTO ${TABLE_NAME} VALUE (NOW(), NOW(), NOW(), NOW(), NOW());
+SELECT * FROM ${TABLE_NAME};

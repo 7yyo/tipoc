@@ -1,0 +1,29 @@
+duration:
+  id: "80"
+  tab: "tidb"
+  name: "duration"
+  org: "000000011"
+
+qps:
+  id: "21"
+  tab: "tidb"
+  name: "qps"
+  org: "000000011"
+
+tidb_uptime:
+  id: "184"
+  tab: "tidb"
+  name: "tidb_uptime"
+  org: "000000011"
+
+pd_uptime:
+  id: "1430"
+  tab: "pd"
+  name: "pd_uptime"
+  org: "Q6RuHYIWk"
+
+tikv_uptime:
+  id: "4106"
+  tab: "tikv-details"
+  name: "tikv_uptime"
+  org: "RDVQiEzZz"

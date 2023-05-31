@@ -1,0 +1,449 @@
+package server
+
+import (
+	"bufio"
+	"embed"
+	ui "github.com/gizak/termui/v3"
+	"github.com/gizak/termui/v3/widgets"
+	"io/fs"
+	"io/ioutil"
+	"net"
+	"path/filepath"
+	"pictorial/log"
+	"strings"
+)
+
+//go:embed "*"
+var svr embed.FS
+
+const catalog = "item.catalog"
+
+const (
+	up      = "<Up>"
+	down    = "<Down>"
+	left    = "<Left>"
+	right   = "<Right>"
+	enter   = "<Enter>"
+	ctrlC   = "<C-c>"
+	sUp     = ","
+	sDown   = "."
+	sDelete = "<Backspace>"
+)
+
+const (
+	sql = iota
+	other
+	kill
+	crash
+	dataCorrupted
+	recoverSystemd
+	disaster
+)
+
+func getAction(i int) string {
+	switch i {
+	case sql:
+		return "SQL"
+	case kill:
+		return "KILL"
+	case crash:
+		return "CRASH"
+	case dataCorrupted:
+		return "DATA_CORRUPTED"
+	case recoverSystemd:
+		return "RECOVER_SYSTEMD"
+	case disaster:
+		return "DISASTER"
+	default:
+		return ""
+	}
+}
+
+type item struct {
+	name   string
+	action int
+	tp     string // type of node
+}
+
+func (i item) String() string {
+	return i.name
+}
+
+const (
+	tree = iota
+	selected
+	lg
+	pBar
+	ldr
+)
+
+type widget struct {
+	tree       *widgets.Tree
+	selected   *widgets.Tree
+	lg         *widgets.List
+	processBar *widgets.Gauge
+	loader     *widgets.List
+	show       *widgets.List
+}
+
+func newTree(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Tree {
+	tree := widgets.NewTree()
+	tree.TextStyle = ui.NewStyle(ui.ColorClear)
+	tree.Title = t
+	if t == "selected" {
+		nodes := make([]*widgets.TreeNode, 0)
+		tree.SetNodes(nodes)
+	}
+	tree.TitleStyle = ui.NewStyle(ui.ColorClear)
+	tree.SetRect(x1, y1, x2, y2)
+	tree.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
+	tree.SelectedRowStyle = ui.Style{
+		Fg:       ui.ColorGreen,
+		Bg:       ui.ColorClear,
+		Modifier: ui.ModifierBold,
+	}
+	return tree
+}
+
+func newList(rows []string, t string, x1 int, y1 int, x2 int, y2 int) *widgets.List {
+	list := widgets.NewList()
+	list.Title = t
+	list.Rows = rows
+	list.TitleStyle = ui.NewStyle(ui.ColorClear)
+	list.SetRect(x1, y1, x2, y2)
+	list.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
+	list.SelectedRowStyle = ui.Style{
+		Fg:       ui.ColorGreen,
+		Bg:       ui.ColorClear,
+		Modifier: ui.ModifierBold,
+	}
+	list.TextStyle = ui.Style{
+		Fg: ui.ColorClear,
+		Bg: ui.ColorClear,
+	}
+	return list
+}
+
+func newGauge(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Gauge {
+	gauge := widgets.NewGauge()
+	gauge.Title = t
+	gauge.Percent = 0
+	gauge.SetRect(x1, y1, x2, y2)
+	gauge.BarColor = ui.ColorGreen
+	gauge.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
+	gauge.TitleStyle = ui.NewStyle(ui.ColorClear)
+	return gauge
+}
+
+var preAction int
+var others string
+
+func (w *widget) setTreeNodes() error {
+
+	var treeNodes []*widgets.TreeNode
+	var root *widgets.TreeNode
+	var parentNodes []*widgets.TreeNode
+
+	f, err := svr.Open(catalog)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		level := strings.Count(line, ".")
+		name := strings.TrimLeft(line, "\t")
+		node := &widgets.TreeNode{
+			Value: item{
+				name: name, action: sql,
+			},
+		}
+		if level == 0 {
+			if root != nil {
+				treeNodes = append(treeNodes, root)
+			}
+			root = node
+			parentNodes = []*widgets.TreeNode{root}
+		} else {
+			for len(parentNodes) > level {
+				parentNodes = parentNodes[:len(parentNodes)-1]
+			}
+			parent := parentNodes[len(parentNodes)-1]
+			parent.Nodes = append(parent.Nodes, node)
+			if level > len(parentNodes)-1 {
+				parentNodes = append(parentNodes, parent.Nodes[len(parent.Nodes)-1])
+			} else {
+				parentNodes[level] = parent.Nodes[len(parent.Nodes)-1]
+			}
+		}
+	}
+	if root != nil {
+		treeNodes = append(treeNodes, root)
+	}
+
+	if others != "" {
+		dir, err := ioutil.ReadDir(others)
+		if err != nil {
+			return err
+		}
+		if len(dir) != 0 {
+			others := widgets.TreeNode{
+				Value: item{
+					name: others,
+				},
+			}
+			treeNodes = append(treeNodes, &others)
+		} else {
+			log.Logger.Warn("others dir has no files, so skip.")
+		}
+	}
+
+	w.tree.SetNodes(treeNodes)
+
+	if others != "" {
+		dir, err := ioutil.ReadDir(others)
+		if err != nil {
+			return err
+		}
+		if len(dir) != 0 {
+			w.tree.Walk(func(node *widgets.TreeNode) bool {
+				if node.Value.String() == others {
+					err := filepath.Walk(others, func(path string, info fs.FileInfo, err error) error {
+						if !info.IsDir() {
+							n := widgets.TreeNode{
+								Value: item{
+									name:   strings.TrimSuffix(info.Name(), ".sql"),
+									action: other,
+								},
+							}
+							node.Nodes = append(node.Nodes, &n)
+						}
+						return nil
+					})
+					if err != nil {
+						return false
+					}
+					return false
+				}
+				return true
+			})
+		}
+	}
+
+	labelKey := make(map[string]bool)
+	nodes, err := getNodes()
+	if err != nil {
+		return err
+	}
+	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
+		name := treeNode.Value.String()
+		switch {
+		case isKill(name), isCrash(name), isRecoverSystemd(name):
+			switch {
+			case isKill(name):
+				preAction = kill
+			case isCrash(name):
+				preAction = crash
+			case isRecoverSystemd(name):
+				preAction = recoverSystemd
+			}
+			for k := range nodes {
+				if k != "grafana" {
+					treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+						Value: item{name: k},
+					})
+				}
+			}
+		case isDataCorrupted(name):
+			preAction = dataCorrupted
+			for k, _ := range nodes {
+				if k != "tidb" && k != "grafana" {
+					treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+						Value: item{name: k},
+					})
+				}
+			}
+		case isDisaster(name):
+			preAction = disaster
+			for _, s := range nodes["tikv"] {
+				for k, _ := range s.labels {
+					labelKey[k] = true
+				}
+			}
+			for key, _ := range labelKey {
+				treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+					Value: item{
+						name:   key,
+						action: preAction,
+					},
+				})
+			}
+		}
+		for _, n := range nodes[name] {
+			addr := net.JoinHostPort(n.host, n.port)
+			if n.tp == pdL {
+				addr += "(L)"
+			}
+			treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+				Value: item{
+					name:   addr,
+					action: preAction,
+					tp:     name,
+				},
+			})
+		}
+		if labelKey[name] {
+			visited := make(map[string]bool)
+			for _, s := range nodes["tikv"] {
+				value := s.labels[name]
+				if visited[value] {
+					continue
+				}
+				visited[value] = true
+				treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+					Value: item{
+						name: value, action: preAction,
+					},
+				})
+			}
+		}
+		return true
+	})
+	return nil
+}
+
+func (w *widget) walkTreeScript() (map[string]script, error) {
+	ss := make(map[string]script)
+	var err error
+	var sc []string
+	w.tree.Walk(func(node *widgets.TreeNode) bool {
+		name := node.Value.String()
+		action := node.Value.(item).action
+		if node.Nodes == nil {
+			switch {
+			case isSQL(action):
+				sc, err = getScript(name, sql)
+			case isOther(action):
+				sc, err = getScript(name, other)
+			}
+			if err != nil {
+				return true
+			}
+			ss[name] = script{
+				sql: sc, name: name, tp: normal,
+			}
+		}
+		return true
+	})
+	return ss, nil
+}
+
+func (w *widget) right() {
+	selected := w.tree.SelectedNode().Value
+	if len(w.tree.SelectedNode().Nodes) == 0 && !w.contains(selected.String()) {
+		if w.conflict(selected.(item).action) {
+			log.Logger.Warnf("conflicting items")
+			return
+		}
+		node := widgets.TreeNode{
+			Value: item{
+				name:   selected.(item).name,
+				action: selected.(item).action,
+				tp:     selected.(item).tp,
+			},
+		}
+		var newSelectedNode []*widgets.TreeNode
+		w.selected.Walk(func(treeNode *widgets.TreeNode) bool {
+			newSelectedNode = append(newSelectedNode, treeNode)
+			return true
+		})
+		newSelectedNode = append(newSelectedNode, &node)
+		w.selected.SetNodes(newSelectedNode)
+		w.selected.Expand()
+		w.selected.ScrollBottom()
+		w.selected.Title = getAction(selected.(item).action)
+	} else {
+		w.tree.Expand()
+	}
+}
+
+func (w *widget) removeSelected() {
+	if w.selected.SelectedNode() != nil {
+		name := w.selected.SelectedNode().Value.String()
+		w.removeTreeNode(name)
+		w.clearSelectedTitle()
+		w.selected.ScrollUp()
+	}
+}
+
+func (w *widget) clearSelectedTitle() {
+	if w.treeLength(selected) == 0 {
+		w.selected.Title = ""
+	}
+}
+
+func (w *widget) contains(s string) bool {
+	arr := w.selected2Arr()
+	set := make(map[string]bool)
+	for _, v := range arr {
+		set[v] = true
+	}
+	return set[s]
+}
+
+func (w *widget) removeTreeNode(name string) {
+	var newSelectedNode []*widgets.TreeNode
+	w.selected.Walk(func(treeNode *widgets.TreeNode) bool {
+		if treeNode.Value.String() != name {
+			newSelectedNode = append(newSelectedNode, treeNode)
+		}
+		return true
+	})
+	w.selected.SetNodes(newSelectedNode)
+}
+
+func (w *widget) selected2Arr() []string {
+	var arr []string
+	w.selected.Walk(func(treeNode *widgets.TreeNode) bool {
+		arr = append(arr, treeNode.Value.String())
+		return true
+	})
+	return arr
+}
+
+func (w *widget) conflict(action int) bool {
+	if w.selected.SelectedNode() == nil {
+		return false
+	}
+	var a int
+	w.selected.Walk(func(node *widgets.TreeNode) bool {
+		a = node.Value.(item).action
+		return false
+	})
+	return a != action
+}
+
+func (w *widget) treeLength(tp int) int {
+	var t *widgets.Tree
+	switch tp {
+	case tree:
+		t = w.tree
+	case selected:
+		t = w.selected
+	}
+	length := 0
+	t.Walk(func(treeNode *widgets.TreeNode) bool {
+		length++
+		return true
+	})
+	return length
+}
+
+func (w *widget) refresh(idx int) {
+	x := (float64(idx) / float64(w.treeLength(selected))) * 100
+	w.processBar.Percent = int(x) % 101
+	w.selected.ScrollDown()
+	ui.Render(w.processBar, w.selected)
+}
