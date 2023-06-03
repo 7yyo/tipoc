@@ -50,7 +50,7 @@ func getScript(name string, a int) ([]string, error) {
 		f, err = os.Open(fPath)
 	}
 	if err != nil {
-		log.Logger.Warnf("%s is not exists, skip", fName)
+		log.Logger.Warnf("%s is not exists, skip", fPath)
 		return nil, nil
 	}
 	defer f.Close()
@@ -58,7 +58,7 @@ func getScript(name string, a int) ([]string, error) {
 	text := string(data)
 	if a == sql {
 		tName := strings.Split(name, " ")[1]
-		text = strings.ReplaceAll(text, tblName, tName)
+		text = strings.ReplaceAll(text, tblName, "poc."+tName)
 	}
 	return strings.Split(text, splitLine), nil
 }

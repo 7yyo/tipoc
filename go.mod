@@ -4,12 +4,14 @@ go 1.19
 
 require (
 	github.com/gizak/termui/v3 v3.1.0
+	github.com/go-cmd/cmd v1.4.1
 	github.com/go-mysql-org/go-mysql v1.7.0
 	github.com/hpcloud/tail v1.0.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/sirupsen/logrus v1.8.1
 	go.etcd.io/etcd v3.3.27+incompatible
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -35,6 +37,7 @@ require (
 	github.com/nsf/termbox-go v0.0.0-20190121233118-02980233997d // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/prometheus/client_golang v1.15.1 // indirect
+	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
 	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
@@ -52,7 +55,6 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 

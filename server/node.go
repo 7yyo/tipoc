@@ -97,6 +97,7 @@ func getTidb(pdAddr string, nodes map[string][]node) error {
 		Host       string `json:"ip"`
 		DeployPath string `json:"deploy_path"`
 	}
+	db := getNodeTp(tidb)
 	for _, v := range r.Kvs {
 		if strings.HasSuffix(string(v.Key), "info") {
 			if err := json.Unmarshal(v.Value, &data); err != nil {
@@ -107,7 +108,7 @@ func getTidb(pdAddr string, nodes map[string][]node) error {
 				port:       getTiDBPort(string(v.Key)),
 				deployPath: data.DeployPath,
 			}
-			nodes["tidb"] = append(nodes["tidb"], node)
+			nodes[db] = append(nodes[db], node)
 		}
 	}
 	return nil
@@ -141,6 +142,8 @@ func getStore(pdAddr string, nodes map[string][]node) error {
 	if err := json.Unmarshal(resp, &data); err != nil {
 		return err
 	}
+	kv := getNodeTp(tikv)
+	flash := getNodeTp(tiflash)
 	for _, s := range data.Stores {
 		host, port, err := net.SplitHostPort(s.Store.Address)
 		if err != nil {
@@ -152,14 +155,23 @@ func getStore(pdAddr string, nodes map[string][]node) error {
 			tp:         tikv,
 			deployPath: s.Store.DeployPath,
 		}
+		isTiflash := false
 		if len(s.Store.Labels) != 0 {
 			lb := make(map[string]string)
 			for _, v := range s.Store.Labels {
-				lb[v.Key] = v.Value
+				if v.Value == "tiflash" {
+					node.tp = tiflash
+					nodes[flash] = append(nodes[flash], node)
+					isTiflash = true
+				} else {
+					lb[v.Key] = v.Value
+				}
 			}
 			node.labels = lb
 		}
-		nodes["tikv"] = append(nodes["tikv"], node)
+		if !isTiflash {
+			nodes[kv] = append(nodes[kv], node)
+		}
 	}
 	return nil
 }
@@ -182,6 +194,7 @@ func getPd(pdAddr string, nodes map[string][]node) error {
 	if err := json.Unmarshal(resp, &data); err != nil {
 		return err
 	}
+	p := getNodeTp(pd)
 	for _, member := range data.Members {
 		for _, h := range member.ClientURLs {
 			addr := strings.Split(h, "//")[1]
@@ -199,7 +212,7 @@ func getPd(pdAddr string, nodes map[string][]node) error {
 			if h == data.Leader.ClientURLs[0] {
 				node.tp = pdL
 			}
-			nodes["pd"] = append(nodes["pd"], node)
+			nodes[p] = append(nodes[p], node)
 		}
 	}
 	return nil
@@ -234,7 +247,8 @@ func getGrafana(pdAddr string, nodes map[string][]node) error {
 		deployPath: data.DeployPath,
 		tp:         grafana,
 	}
-	nodes["grafana"] = append(nodes["grafana"], node)
+	g := getNodeTp(grafana)
+	nodes[g] = append(nodes[g], node)
 	return nil
 }
 
@@ -243,10 +257,11 @@ const tidbProcess = "bin/tidb-server -P %s"
 const pdProcess = "advertise-client-urls=http://%s:%s"
 const tikvProcess = "bin/tikv-server --addr 0.0.0.0:%s"
 const tiflashProcess = "bin/tiflash/tiflash"
+const grafanaProcess = "grafana-%s"
 
 func (n *node) kill() error {
 	addr := net.JoinHostPort(n.host, n.port)
-
+	tp := getNodeTp(n.tp)
 	var psCmd string
 	switch n.tp {
 	case tidb:
@@ -257,23 +272,31 @@ func (n *node) kill() error {
 		psCmd = fmt.Sprintf(tikvProcess, n.port)
 	case tiflash:
 		psCmd = tiflashProcess
+	case grafana:
+		psCmd = fmt.Sprintf(grafanaProcess, n.port)
+	default:
+		return fmt.Errorf("unsupported type: %s", tp)
 	}
 	processIDs, err := ssh.S.GetProcessID(n.host, psCmd)
 	if err != nil {
 		return err
 	}
 	if len(processIDs) == 0 {
-		log.Logger.Warnf("[KILL] %s is not 'UP', skip.", addr)
+		log.Logger.Warnf("[KILL] [%s] %s is offline, skip.", tp, addr)
 		return nil
 	}
-	log.Logger.Infof("[KILL] [%s] %v", addr, processIDs)
+	log.Logger.Infof("[KILL] [%s] [%s] - %v", tp, addr, processIDs)
 	for _, pID := range processIDs {
 		o, err := ssh.S.RunSSH(n.host, fmt.Sprintf(killCmd, pID))
 		if err != nil {
-			log.Logger.Warnf("[KILL] %s {%s} failed: %v: %s", addr, pID, err, string(o))
+			log.Logger.Warnf("[KILL] [%s] %s {%s} failed: %v: %s", tp, addr, pID, err, string(o))
 		}
 	}
 	return nil
+}
+
+func (n *node) dataCorrupted() error {
+	return fmt.Errorf("no GA")
 }
 
 const systemdPath = "/etc/systemd/system/"
@@ -285,6 +308,7 @@ const service = "%s-%s.service"
 func (n *node) systemd(a int) error {
 	var systemd string
 	tp := getNodeTp(n.tp)
+	tp = strings.Replace(tp, "(L)", "", -1)
 	systemd = fmt.Sprintf(service, tp, n.port)
 	service := filepath.Join(systemdPath, systemd)
 	addr := net.JoinHostPort(n.host, n.port)
@@ -294,7 +318,7 @@ func (n *node) systemd(a int) error {
 		c = fmt.Sprintf(alwaysToNo, service)
 	case recoverSystemd:
 		c = fmt.Sprintf(noToAlways, service)
-		log.Logger.Infof("[RECOVER_SYSTEMD] %s", addr)
+		log.Logger.Infof("[RECOVER_SYSTEMD] [%s] %s", tp, addr)
 	}
 	if _, err := ssh.S.RunSSH(n.host, c); err != nil {
 		return err
@@ -316,7 +340,7 @@ func (n *node) preCheck() error {
 	plugin := s.Carry.Plugin
 	pluginName := filepath.Base(plugin)
 	pluginPath := filepath.Join(n.deployPath, "plugins")
-	pluginObj := filepath.Join(pluginPath, pluginName)
+	pluginSelf := filepath.Join(pluginPath, pluginName)
 
 	if o, err = s.DirWalk(n.host, pluginPath); err != nil {
 		return err
@@ -331,7 +355,7 @@ func (n *node) preCheck() error {
 		if o, err = s.Transfer(plugin, target); err != nil {
 			return err
 		}
-		if _, err = s.UnZip(n.host, pluginObj, pluginPath); err != nil {
+		if _, err = s.UnZip(n.host, pluginSelf, pluginPath); err != nil {
 			return err
 		}
 		if _, err = s.Restart("grafana"); err != nil {
@@ -461,4 +485,21 @@ func printPlugins(o string) {
 	log.Logger.Info("maybe plugins installed:")
 	log.Logger.Info(o)
 	log.Logger.Info("have a try now, good luck!")
+}
+
+func getLabelKey(nodes map[string][]node) map[string]bool {
+	labelKey := make(map[string]bool)
+	for _, s := range nodes[getNodeTp(tikv)] {
+		for k, _ := range s.labels {
+			labelKey[k] = true
+		}
+	}
+	return labelKey
+}
+
+func (n *node) isPdLeader(addr string) string {
+	if n.tp == pdL {
+		addr += "(L)"
+	}
+	return addr
 }

@@ -1,0 +1,3 @@
+CREATE TABLE ${TABLE_NAME} (id INT, score INT);
+INSERT INTO ${TABLE_NAME} (id, score) VALUES (1, 80), (2, 90), (3, 75), (4, 95), (5, 85);
+SELECT id, score, RANK() OVER (PARTITION BY id ORDER BY score DESC) AS rk FROM ${TABLE_NAME};

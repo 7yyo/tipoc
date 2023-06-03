@@ -60,13 +60,13 @@ func getAction(i int) string {
 }
 
 type item struct {
-	name   string
+	value  string
 	action int
-	tp     string // type of node
+	tp     string
 }
 
 func (i item) String() string {
-	return i.name
+	return i.value
 }
 
 const (
@@ -140,13 +140,69 @@ var others string
 
 func (w *widget) setTreeNodes() error {
 
+	treeNodes, err := w.buildTreeByCatalog()
+	if err != nil {
+		return err
+	}
+	if err := w.appendOthers(&treeNodes); err != nil {
+		return err
+	}
+	w.tree.SetNodes(treeNodes)
+
+	nodes, err := getNodes()
+	if err != nil {
+		return err
+	}
+	labelKey := getLabelKey(nodes)
+	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
+		name := treeNode.Value.String()
+		switch {
+		case isKill(name):
+			preAction = kill
+			appendNodes(nodes, treeNode, "", preAction)
+		case isCrash(name):
+			preAction = crash
+			appendNodes(nodes, treeNode, "", preAction)
+		case isRecoverSystemd(name):
+			preAction = recoverSystemd
+			appendNodes(nodes, treeNode, "", preAction)
+		case isDisaster(name):
+			if len(labelKey) != 0 {
+				for key, _ := range labelKey {
+					appendTreeNode(treeNode, key, "", preAction)
+				}
+				preAction = disaster
+			}
+		}
+		for _, n := range nodes[name] {
+			addr := net.JoinHostPort(n.host, n.port)
+			addr = n.isPdLeader(addr)
+			appendTreeNode(treeNode, addr, name, preAction)
+		}
+		if labelKey[name] {
+			visited := make(map[string]bool)
+			for _, s := range nodes["tikv"] {
+				value := s.labels[name]
+				if visited[value] {
+					continue
+				}
+				visited[value] = true
+				appendTreeNode(treeNode, value, "", preAction)
+			}
+		}
+		return true
+	})
+	return nil
+}
+
+func (w *widget) buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 	var treeNodes []*widgets.TreeNode
 	var root *widgets.TreeNode
 	var parentNodes []*widgets.TreeNode
 
 	f, err := svr.Open(catalog)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
@@ -157,7 +213,7 @@ func (w *widget) setTreeNodes() error {
 		name := strings.TrimLeft(line, "\t")
 		node := &widgets.TreeNode{
 			Value: item{
-				name: name, action: sql,
+				value: name, action: sql,
 			},
 		}
 		if level == 0 {
@@ -182,135 +238,35 @@ func (w *widget) setTreeNodes() error {
 	if root != nil {
 		treeNodes = append(treeNodes, root)
 	}
+	return treeNodes, nil
+}
 
+func (w *widget) appendOthers(treeNodes *[]*widgets.TreeNode) error {
 	if others != "" {
 		dir, err := ioutil.ReadDir(others)
 		if err != nil {
 			return err
 		}
 		if len(dir) != 0 {
-			others := widgets.TreeNode{
+			othersNode := widgets.TreeNode{
 				Value: item{
-					name: others,
+					value: others,
 				},
 			}
-			treeNodes = append(treeNodes, &others)
+			*treeNodes = append(*treeNodes, &othersNode)
+			err := filepath.Walk(others, func(path string, info fs.FileInfo, err error) error {
+				if !info.IsDir() {
+					appendTreeNode(&othersNode, strings.TrimSuffix(info.Name(), suffix), "", other)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
 		} else {
-			log.Logger.Warn("others dir has no files, so skip.")
+			log.Logger.Warnf("%s has no script, skip.", others)
 		}
 	}
-
-	w.tree.SetNodes(treeNodes)
-
-	if others != "" {
-		dir, err := ioutil.ReadDir(others)
-		if err != nil {
-			return err
-		}
-		if len(dir) != 0 {
-			w.tree.Walk(func(node *widgets.TreeNode) bool {
-				if node.Value.String() == others {
-					err := filepath.Walk(others, func(path string, info fs.FileInfo, err error) error {
-						if !info.IsDir() {
-							n := widgets.TreeNode{
-								Value: item{
-									name:   strings.TrimSuffix(info.Name(), ".sql"),
-									action: other,
-								},
-							}
-							node.Nodes = append(node.Nodes, &n)
-						}
-						return nil
-					})
-					if err != nil {
-						return false
-					}
-					return false
-				}
-				return true
-			})
-		}
-	}
-
-	labelKey := make(map[string]bool)
-	nodes, err := getNodes()
-	if err != nil {
-		return err
-	}
-	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
-		name := treeNode.Value.String()
-		switch {
-		case isKill(name), isCrash(name), isRecoverSystemd(name):
-			switch {
-			case isKill(name):
-				preAction = kill
-			case isCrash(name):
-				preAction = crash
-			case isRecoverSystemd(name):
-				preAction = recoverSystemd
-			}
-			for k := range nodes {
-				if k != "grafana" {
-					treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-						Value: item{name: k},
-					})
-				}
-			}
-		case isDataCorrupted(name):
-			preAction = dataCorrupted
-			for k, _ := range nodes {
-				if k != "tidb" && k != "grafana" {
-					treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-						Value: item{name: k},
-					})
-				}
-			}
-		case isDisaster(name):
-			preAction = disaster
-			for _, s := range nodes["tikv"] {
-				for k, _ := range s.labels {
-					labelKey[k] = true
-				}
-			}
-			for key, _ := range labelKey {
-				treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-					Value: item{
-						name:   key,
-						action: preAction,
-					},
-				})
-			}
-		}
-		for _, n := range nodes[name] {
-			addr := net.JoinHostPort(n.host, n.port)
-			if n.tp == pdL {
-				addr += "(L)"
-			}
-			treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-				Value: item{
-					name:   addr,
-					action: preAction,
-					tp:     name,
-				},
-			})
-		}
-		if labelKey[name] {
-			visited := make(map[string]bool)
-			for _, s := range nodes["tikv"] {
-				value := s.labels[name]
-				if visited[value] {
-					continue
-				}
-				visited[value] = true
-				treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-					Value: item{
-						name: value, action: preAction,
-					},
-				})
-			}
-		}
-		return true
-	})
 	return nil
 }
 
@@ -349,7 +305,7 @@ func (w *widget) right() {
 		}
 		node := widgets.TreeNode{
 			Value: item{
-				name:   selected.(item).name,
+				value:  selected.(item).value,
 				action: selected.(item).action,
 				tp:     selected.(item).tp,
 			},
@@ -446,4 +402,20 @@ func (w *widget) refresh(idx int) {
 	w.processBar.Percent = int(x) % 101
 	w.selected.ScrollDown()
 	ui.Render(w.processBar, w.selected)
+}
+
+func appendNodes(nodes map[string][]node, treeNode *widgets.TreeNode, tp string, action int) {
+	for name := range nodes {
+		appendTreeNode(treeNode, name, tp, action)
+	}
+}
+
+func appendTreeNode(treeNode *widgets.TreeNode, name, tp string, a int) {
+	treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
+		Value: item{
+			value:  name,
+			tp:     tp,
+			action: a,
+		},
+	})
 }

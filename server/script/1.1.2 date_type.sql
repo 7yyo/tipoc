@@ -1,4 +1,3 @@
-USE poc;
 CREATE TABLE ${TABLE_NAME}
 (
     c1 DATE,

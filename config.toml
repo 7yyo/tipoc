@@ -3,7 +3,7 @@ name = "tidb-test"
 
 [mysql]
 host = "10.2.103.64"
-port = "2222"
+port = "4000"
 user = "root"
 password = ""
 
@@ -22,4 +22,7 @@ interval = 5
 plugin = ""
 [other]
 dir = "/Users/yuyang/go/src/pictorial/other"
+
+[log]
+level = "info"
 

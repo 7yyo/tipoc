@@ -42,8 +42,13 @@ func newJob(ss map[string]script, selected *widgets.Tree) job {
 func (j *job) run() {
 	if err := j.preRun(); err != nil {
 		j.errC <- err
+		return
 	}
 	value := j.selected.SelectedNode().Value
+	if isDisaster(value.String()) {
+		log.Logger.Warn("this cluster has no label, stop")
+		return
+	}
 	switch value.(item).action {
 	case sql, other:
 		j.runSQL()
@@ -111,7 +116,7 @@ func (j *job) runNodes() {
 	}
 	var cnt int
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
-		addr := strings.Replace(i.Value.(item).name, "(L)", "", -1)
+		addr := strings.Replace(i.Value.(item).value, "(L)", "", -1)
 		tp := i.Value.(item).tp
 		ac := i.Value.(item).action
 		var failMsg = "[%s] %s failed: %v"
@@ -119,18 +124,16 @@ func (j *job) runNodes() {
 			if addr == net.JoinHostPort(node.host, node.port) {
 				switch ac {
 				case kill:
-					if err := node.kill(); err != nil {
-						log.Logger.Errorf(failMsg, "KILL", addr, err)
-					}
+					err = node.kill()
 				case dataCorrupted:
+					err = node.dataCorrupted()
 				case crash:
-					if err := node.systemd(crash); err != nil {
-						log.Logger.Errorf(failMsg, "CRASH", addr, err)
-					}
+					err = node.systemd(crash)
 				case recoverSystemd:
-					if err := node.systemd(recoverSystemd); err != nil {
-						log.Logger.Errorf(failMsg, "RECOVER_SYSTEMD", addr, err)
-					}
+					err = node.systemd(recoverSystemd)
+				}
+				if err != nil {
+					log.Logger.Errorf(failMsg, getAction(ac), addr, err)
 				}
 				break
 			}

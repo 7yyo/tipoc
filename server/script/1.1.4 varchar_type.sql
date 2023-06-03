@@ -1,4 +1,3 @@
-USE poc;
 CREATE TABLE ${TABLE_NAME}
 (
     c1 CHAR(10),

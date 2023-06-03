@@ -61,32 +61,26 @@ func (m *MySQL) ResetDB() error {
 	return nil
 }
 
+const resultFile = "%s_%d.result"
+
 func (m *MySQL) ExecuteAndWrite(s, rd, name string, idx int32) error {
 	var stdout, stderr bytes.Buffer
-	var err error
 	cmdArgs := m.args(s)
 	cmd := exec.Command("mysql", cmdArgs...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s: %s", stdout.String(), err.Error())
-	}
-	var fName string
-	fName = filepath.Join(rd, fmt.Sprintf("%s_%d.result", name, idx))
+	err := cmd.Run()
+	fName := filepath.Join(rd, fmt.Sprintf(resultFile, name, idx))
 	f, _ := os.Create(fName)
-	_, err = io.WriteString(f, processResult(stdout.String()))
-	if err != nil {
-		return err
-	}
-	_, err = io.WriteString(f, processError(stderr.String()))
-	if err != nil {
-		return err
-	}
+	resultOutput := updateResultOutput(stdout.String())
+	errOutput := updateErrOutput(stderr.String())
+	_, _ = io.WriteString(f, resultOutput)
+	_, _ = io.WriteString(f, errOutput)
 	if stderr.String() != "" && stderr.String() != SqlWarn {
 		if err != nil {
-			return fmt.Errorf("%s: %s", processError(stderr.String()), err.Error())
+			return fmt.Errorf("%s: %s", errOutput, err.Error())
 		} else {
-			return fmt.Errorf("%s", processError(stderr.String()))
+			return fmt.Errorf("%s", errOutput)
 		}
 	}
 	return nil
@@ -94,7 +88,7 @@ func (m *MySQL) ExecuteAndWrite(s, rd, name string, idx int32) error {
 
 const resultLine = "--------------"
 const bye = "Bye"
-const SqlWarn = "mysql: [Warning] Using a password on the command line interface can be insecure."
+const SqlWarn = "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
 
 func isQueryOutput(input string) bool {
 	re1 := regexp.MustCompile(`^Query OK, \d+ row(s)? affected \([\d.]+ (sec|ms)\)$`)
@@ -112,13 +106,21 @@ func isQueryOutput(input string) bool {
 		strings.HasPrefix("ERROR", input)
 }
 
+func isEmptySet(input string) bool {
+	return strings.Contains(input, "Empty set")
+}
+
 func isDMLResultOutput(input string) bool {
 	re1 := regexp.MustCompile(`^Records: \d+  Duplicates: \d+  Warnings: \d+$`)
 	re2 := regexp.MustCompile(`^Rows matched: \d+  Changed: \d+  Warnings: \d+$`)
 	return re1.MatchString(input) || re2.MatchString(input)
 }
 
-func processResult(s string) string {
+const sleep = "SELECT SLEEP"
+const sleepHeight = 9
+const bingo = 2
+
+func updateResultOutput(s string) string {
 	lines := strings.Split(s, "\n")
 	var cnt int
 	var first bool
@@ -129,14 +131,14 @@ func processResult(s string) string {
 		value := lines[i]
 		switch {
 		case value == resultLine:
-			if cnt%2 == 0 {
+			if cnt%bingo == 0 {
 				first = false
 			}
 			first = true
 			cnt++
-		case cnt%2 != 0:
-			if strings.HasPrefix(value, "SELECT SLEEP") {
-				i += 9
+		case cnt%bingo != 0:
+			if strings.HasPrefix(value, sleep) {
+				i += sleepHeight
 				first = false
 				cnt++
 				continue
@@ -155,7 +157,7 @@ func processResult(s string) string {
 		case value == bye:
 			continue
 		case value != "":
-			if isQueryOutput(value) {
+			if isQueryOutput(value) || isEmptySet(value) {
 				result = append(result, fmt.Sprintf("%s\n", value))
 			} else if isDMLResultOutput(value) {
 				result[len(result)-1] = strings.TrimSuffix(result[len(result)-1], "\n")
@@ -172,11 +174,11 @@ func processResult(s string) string {
 	return out.String()
 }
 
-func processError(s string) string {
+func updateErrOutput(s string) string {
 	ss := strings.Split(s, "\n")
 	var r strings.Builder
 	for _, s := range ss {
-		if s != "" && s != SqlWarn {
+		if s != "" && s != strings.TrimSuffix(SqlWarn, "\n") {
 			r.WriteString(s)
 		}
 	}

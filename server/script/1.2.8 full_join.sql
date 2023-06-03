@@ -1,0 +1,22 @@
+CREATE TABLE ${TABLE_NAME}_1 (id INT, name VARCHAR(20));
+CREATE TABLE ${TABLE_NAME}_2 (id INT, address VARCHAR(50));
+INSERT INTO ${TABLE_NAME}_1 VALUES (1, 'John'), (2, 'Mike'), (3, 'Alice');
+INSERT INTO ${TABLE_NAME}_2 VALUES (1, '123 Main St'), (3, '456 Elm St'), (4, '789 Oak St');
+
+SELECT
+    COALESCE(${TABLE_NAME}_1.id, ${TABLE_NAME}_2.id) AS id,
+    ${TABLE_NAME}_1.name,
+    ${TABLE_NAME}_2.address
+FROM
+    ${TABLE_NAME}_1
+        LEFT JOIN ${TABLE_NAME}_2 ON ${TABLE_NAME}_1.id = ${TABLE_NAME}_2.id
+UNION
+SELECT
+    COALESCE(${TABLE_NAME}_1.id, ${TABLE_NAME}_2.id) AS id,
+    ${TABLE_NAME}_1.name,
+    ${TABLE_NAME}_2.address
+FROM
+    ${TABLE_NAME}_1
+        RIGHT JOIN ${TABLE_NAME}_2 ON ${TABLE_NAME}_1.id = ${TABLE_NAME}_2.id
+WHERE
+    ${TABLE_NAME}_1.id IS NULL;

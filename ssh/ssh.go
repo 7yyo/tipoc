@@ -35,6 +35,8 @@ func (s *SSH) ApplySSHKey() error {
 	envRoot := path.Dir(tiup)
 	s.PrivateKey = privateKeyPath(path.Dir(envRoot), S.ClusterName)
 	s.PublicKey = publicKeyPath(path.Dir(envRoot), S.ClusterName)
+	log.Logger.Debug(s.PublicKey)
+	log.Logger.Debug(s.PrivateKey)
 	return nil
 }
 

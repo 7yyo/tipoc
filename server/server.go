@@ -4,6 +4,7 @@ import (
 	"flag"
 	ui "github.com/gizak/termui/v3"
 	"github.com/pelletier/go-toml"
+	"github.com/sirupsen/logrus"
 	"pictorial/log"
 	"pictorial/mysql"
 	"pictorial/ssh"
@@ -65,7 +66,11 @@ func New() error {
 		case sDelete:
 			svr.w.removeSelected()
 		case enter:
-			return svr.run()
+			if svr.w.selected == nil || svr.w.treeLength(selected) == 0 {
+				log.Logger.Warnf("selected is 0")
+			} else {
+				return svr.run()
+			}
 		case ctrlC:
 			return nil
 		}
@@ -83,36 +88,31 @@ func (svr *Server) run() error {
 	if err != nil {
 		return err
 	}
-	if svr.w.treeLength(selected) == 0 {
-		log.Logger.Warnf("selected is 0")
-	} else {
-		j := newJob(ss, svr.w.selected)
-		svr.w.selected.ScrollTop()
-		ui.Render(
-			svr.w.selected,
-		)
-		go j.run()
-		ue := ui.PollEvents()
-		for {
-			select {
-			case e := <-ue:
-				if e.ID == ctrlC {
-					return nil
-				}
-			case err := <-j.errC:
-				log.Logger.Error(err)
-			case idx := <-j.barC:
-				svr.w.refresh(idx)
-			case ldText := <-j.ldC:
-				svr.w.loader.Rows = append(svr.w.loader.Rows, ldText)
-				svr.w.loader.ScrollBottom()
-				ui.Render(
-					svr.w.loader,
-				)
+	j := newJob(ss, svr.w.selected)
+	svr.w.selected.ScrollTop()
+	ui.Render(
+		svr.w.selected,
+	)
+	go j.run()
+	ue := ui.PollEvents()
+	for {
+		select {
+		case e := <-ue:
+			if e.ID == ctrlC {
+				return nil
 			}
+		case err := <-j.errC:
+			log.Logger.Error(err)
+		case idx := <-j.barC:
+			svr.w.refresh(idx)
+		case ldText := <-j.ldC:
+			svr.w.loader.Rows = append(svr.w.loader.Rows, ldText)
+			svr.w.loader.ScrollBottom()
+			ui.Render(
+				svr.w.loader,
+			)
 		}
 	}
-	return nil
 }
 
 func parse() error {
@@ -123,16 +123,21 @@ func parse() error {
 	if err != nil {
 		return err
 	}
+
+	log.Logger.Info("config: ")
 	for k, v := range config.Values() {
-		log.Logger.Info(k, v)
+		log.Logger.Infof(" %s == %s", k, v)
 	}
+
 	mysql.M.Host = config.Get("mysql.host").(string)
 	mysql.M.Port = config.Get("mysql.port").(string)
 	mysql.M.User = config.Get("mysql.user").(string)
 	mysql.M.Password = config.Get("mysql.password").(string)
+
 	ssh.S.User = config.Get("ssh.user").(string)
 	ssh.S.Password = config.Get("ssh.password").(string)
 	ssh.S.SshPort = config.Get("ssh.sshPort").(string)
+
 	ssh.S.ClusterName = config.Get("cluster.name").(string)
 	ssh.S.Carry.Plugin = config.Get("grafana.plugin").(string)
 	if err := ssh.S.ApplySSHKey(); err != nil {
@@ -141,6 +146,11 @@ func parse() error {
 	ld.path = config.Get("loader.path").(string)
 	ld.interval = config.Get("loader.interval").(int64)
 	others = config.Get("other.dir").(string)
+	logLevel := config.Get("log.level").(string)
+	switch logLevel {
+	case "debug":
+		log.Logger.SetLevel(logrus.DebugLevel)
+	}
 	return nil
 }
 
