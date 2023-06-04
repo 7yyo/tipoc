@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.etcd.io/etcd/clientv3"
 	"net"
 	"path/filepath"
 	"pictorial/http"
@@ -16,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.etcd.io/etcd/clientv3"
 )
 
 const (
@@ -309,7 +310,18 @@ func (n *node) systemd(a int) error {
 	var systemd string
 	tp := getNodeTp(n.tp)
 	tp = strings.Replace(tp, "(L)", "", -1)
-	systemd = fmt.Sprintf(service, tp, n.port)
+	tiflashConfigPath := strings.Replace(n.deployPath, "bin/tiflash", "conf/tiflash.toml", -1)
+	switch n.tp {
+	case tiflash:
+		tiflashTcpPort, err := ssh.S.RunSSH(n.host, fmt.Sprintf("grep tcp_port %s | awk -F '= ' '{print $2}'", tiflashConfigPath))
+		if err != nil {
+			return err
+		}
+		systemd = strings.Replace(fmt.Sprintf(service, tp, tiflashTcpPort), "\n", "", -1)
+	default:
+		systemd = fmt.Sprintf(service, tp, n.port)
+	}
+
 	service := filepath.Join(systemdPath, systemd)
 	addr := net.JoinHostPort(n.host, n.port)
 	var c string
