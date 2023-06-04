@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"os/exec"
 	"path"
 	"pictorial/log"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type SSH struct {
@@ -95,20 +96,55 @@ func RunLocal(c string) ([]byte, error) {
 	return stderr.Bytes(), nil
 }
 
-func (s *SSH) GetProcessID(host, psCmd string) ([]string, error) {
-	c := fmt.Sprintf("ps aux | grep '%s' | grep -v grep | awk '{print $2}'\n", psCmd)
+func (s *SSH) GetProcessID(host, ssCmd string) (string, error) {
+	/*
+	   $ ss -alp | egrep "3930"|awk -F "pid=" '{print $2}'|awk -F"," '{print $1}'|sort |uniq
+	   17900
+	*/
+	c := fmt.Sprintf("/usr/sbin/ss -alp | grep '%s'|awk -F 'pid=' '{print $2}'|awk -F',' '{print $1}'|sort |uniq\n", ssCmd)
 	o, err := s.RunSSH(host, c)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	id := make([]string, 0)
+	var id string
 	sc := bufio.NewScanner(strings.NewReader(string(o)))
 	for sc.Scan() {
 		if sc.Text() != "" {
-			id = append(id, sc.Text())
+			id = sc.Text()
 		}
 	}
 	return id, nil
+}
+
+func (s *SSH) GetServiceName(host string, processId string) (string, error) {
+	/*
+		$ systemctl   status 17900
+			● tiflash-9000.service - tiflash service
+			   Loaded: loaded (/etc/systemd/system/tiflash-9000.service; enabled; vendor preset: disabled)
+			   Active: active (running) since Sat 2023-06-03 23:29:12 CST; 9h ago
+			 Main PID: 17900 (TiFlashMain)
+			    Tasks: 978
+			   Memory: 336.1M
+			   CGroup: /system.slice/tiflash-9000.service
+			           └─17900 bin/tiflash/tiflash server --config-file conf/tiflash.toml
+
+		$ systemctl   status 17900 | grep systemd|awk -F'system/' '{print $2}'|awk -F';' '{print $1}'
+		tiflash-9000.service
+	*/
+	c := fmt.Sprintf("/bin/systemctl status %s | grep systemd|awk -F'system/' '{print $2}'|awk -F';' '{print $1}'\n", processId)
+	o, err := s.RunSSH(host, c)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	sc := bufio.NewScanner(strings.NewReader(string(o)))
+	for sc.Scan() {
+		if sc.Text() != "" {
+			id = sc.Text()
+		}
+	}
+	return id, nil
+
 }
 
 func (s *SSH) DirWalk(host, target string) ([]byte, error) {
