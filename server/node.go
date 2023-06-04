@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.etcd.io/etcd/clientv3"
 	"net"
 	"path/filepath"
 	"pictorial/http"
@@ -15,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"go.etcd.io/etcd/clientv3"
 )
 
 const (
@@ -254,45 +253,44 @@ func getGrafana(pdAddr string, nodes map[string][]node) error {
 }
 
 const killCmd = "kill -9 %s"
-
-/*
 const tidbProcess = "bin/tidb-server -P %s"
 const pdProcess = "advertise-client-urls=http://%s:%s"
 const tikvProcess = "bin/tikv-server --addr 0.0.0.0:%s"
 const tiflashProcess = "bin/tiflash/tiflash"
 const grafanaProcess = "grafana-%s"
-*/
 
 func (n *node) kill() error {
 	addr := net.JoinHostPort(n.host, n.port)
 	tp := getNodeTp(n.tp)
-	var ssCmd string
+	var psCmd string
 	switch n.tp {
 	case tidb:
-		ssCmd = fmt.Sprintf(n.port)
+		psCmd = fmt.Sprintf(tidbProcess, n.port)
 	case pd, pdL:
-		ssCmd = fmt.Sprintf(n.port)
+		psCmd = fmt.Sprintf(pdProcess, n.host, n.port)
 	case tikv:
-		ssCmd = fmt.Sprintf(n.port)
+		psCmd = fmt.Sprintf(tikvProcess, n.port)
 	case tiflash:
-		ssCmd = fmt.Sprintf(n.port)
+		psCmd = tiflashProcess
 	case grafana:
-		ssCmd = fmt.Sprintf(n.port)
+		psCmd = fmt.Sprintf(grafanaProcess, n.port)
 	default:
 		return fmt.Errorf("unsupported type: %s", tp)
 	}
-	processIDs, err := ssh.S.GetProcessID(n.host, ssCmd)
+	processIDs, err := ssh.S.GetProcessID(n.host, psCmd)
 	if err != nil {
 		return err
 	}
-	if processIDs == "" {
+	if len(processIDs) == 0 {
 		log.Logger.Warnf("[KILL] [%s] %s is offline, skip.", tp, addr)
 		return nil
 	}
 	log.Logger.Infof("[KILL] [%s] [%s] - %v", tp, addr, processIDs)
-	o, err := ssh.S.RunSSH(n.host, fmt.Sprintf(killCmd, processIDs))
-	if err != nil {
-		log.Logger.Warnf("[KILL] [%s] %s {%s} failed: %v: %s", tp, addr, processIDs, err, string(o))
+	for _, pID := range processIDs {
+		o, err := ssh.S.RunSSH(n.host, fmt.Sprintf(killCmd, pID))
+		if err != nil {
+			log.Logger.Warnf("[KILL] [%s] %s {%s} failed: %v: %s", tp, addr, pID, err, string(o))
+		}
 	}
 	return nil
 }
@@ -305,43 +303,15 @@ const systemdPath = "/etc/systemd/system/"
 const alwaysToNo = "sudo sed -i 's/always/no/g' %s"
 const reloadSystemd = "sudo systemctl daemon-reload"
 const noToAlways = "sudo sed -i 's/no/always/g' %s"
+const service = "%s-%s.service"
 
 func (n *node) systemd(a int) error {
+	var systemd string
 	tp := getNodeTp(n.tp)
-	addr := net.JoinHostPort(n.host, n.port)
-
-	var ssCmd string
-	switch n.tp {
-	case tidb:
-		ssCmd = fmt.Sprintf(n.port)
-	case pd, pdL:
-		ssCmd = fmt.Sprintf(n.port)
-	case tikv:
-		ssCmd = fmt.Sprintf(n.port)
-	case tiflash:
-		ssCmd = fmt.Sprintf(n.port)
-	case grafana:
-		ssCmd = fmt.Sprintf(n.port)
-	default:
-		return fmt.Errorf("unsupported type: %s", tp)
-	}
-
-	processIDs, err := ssh.S.GetProcessID(n.host, ssCmd)
-	if err != nil {
-		return err
-	}
-
-	systemd, err := ssh.S.GetServiceName(n.host, processIDs)
-	if err != nil {
-		return err
-	}
-	if systemd == "" {
-		log.Logger.Warnf("%s %s service file not exists.", tp, addr)
-		return nil
-	}
-
+	tp = strings.Replace(tp, "(L)", "", -1)
+	systemd = fmt.Sprintf(service, tp, n.port)
 	service := filepath.Join(systemdPath, systemd)
-
+	addr := net.JoinHostPort(n.host, n.port)
 	var c string
 	switch a {
 	case crash:
