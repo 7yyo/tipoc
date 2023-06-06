@@ -31,6 +31,7 @@ func (m *MySQL) ExecuteSQL(s string) (*mysql.Result, error) {
 		return nil, err
 	}
 	defer conn.Close()
+	log.Logger.Debug(s)
 	return conn.Execute(s)
 }
 
@@ -57,7 +58,6 @@ func (m *MySQL) ResetDB() error {
 	if _, err := m.ExecuteSQL("CREATE DATABASE poc"); err != nil {
 		return err
 	}
-	log.Logger.Info("reset DB.")
 	return nil
 }
 
@@ -183,4 +183,16 @@ func updateErrOutput(s string) string {
 		}
 	}
 	return r.String()
+}
+
+func (m *MySQL) GetPdAddr() (string, error) {
+	rs, err := m.ExecuteSQL("SELECT * FROM information_schema.cluster_info WHERE type = 'pd'")
+	if err != nil {
+		return "", err
+	}
+	defer rs.Close()
+	if rs == nil {
+		return "", fmt.Errorf("please confirm that the pd exists in the cluster")
+	}
+	return string(rs.Values[0][1].AsString()), nil
 }

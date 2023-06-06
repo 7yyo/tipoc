@@ -1,0 +1,8 @@
+SELECT CAST(DATE('2020-07-16') AS SIGNED) AS col_data;
+SELECT CAST(DATE('2020-07-16') AS DATETIME) AS col_data;
+SELECT CAST(str_to_date('202007161200000','%Y%m%d%H%i%s') AS DATE) AS col_data FROM dual;
+SELECT CAST(str_to_date('202007161233000','%Y%m%d%H%i%s') AS DATETIME ) AS col_data FROM dual;
+SELECT HEX('abc');
+SELECT HEX(255);
+
+

@@ -54,10 +54,15 @@
         1.9.7 drop_constraint
     1.10 view
     1.11 function
-        1.11.1 function
+        1.11.1 numeric_function
         1.11.2 window_function
             1.11.2.1 row_number
             1.11.2.2 rank
+        1.11.3 varchar_function
+        1.11.4 date_function
+        1.11.5 aggregate_function
+        1.11.6 conversion_function
+        1.11.7 null_function
     1.12 index
         1.12.1 unique_index
         1.12.2 joint_index
@@ -93,7 +98,7 @@
 3 htap
     3.1 htap
     3.3 mpp
-4 Operations
+4 operations
     4.1 slow_query
     4.2 analyze
         4.2.1 explain_analyze
@@ -102,10 +107,12 @@
     4.3 variables
     4.4 online_configuration
     4.5 user
-5 Scalability
+5 scalability
     5.2 scale_in
 7 high_availability
     7.1 kill
+    7.2 data_corrupted
     7.3 crash
     7.4 recover_systemd
     7.5 disaster
+    7.6 reboot

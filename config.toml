@@ -3,7 +3,7 @@ name = "tidb-test"
 
 [mysql]
 host = "10.2.103.64"
-port = "4000"
+port = "2222"
 user = "root"
 password = ""
 

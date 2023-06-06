@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.etcd.io/etcd/clientv3"
 	"net"
 	"path/filepath"
 	"pictorial/http"
@@ -15,73 +16,47 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"go.etcd.io/etcd/clientv3"
 )
 
 const (
-	tidb = iota
-	pd
-	pdL
-	tikv
-	tiflash
-	grafana
+	tidb    = "tidb"
+	pd      = "pd"
+	pdL     = "pd(L)"
+	tikv    = "tikv"
+	tiflash = "tiflash"
+	grafana = "grafana"
 )
 
-func getNodeTp(tp int) string {
-	switch tp {
-	case tidb:
-		return "tidb"
-	case pd:
-		return "pd"
-	case pdL:
-		return "pd(L)"
-	case tikv:
-		return "tikv"
-	case tiflash:
-		return "tiflash"
-	case grafana:
-		return "grafana"
-	default:
-		return ""
-	}
-}
-
-type node struct {
+type component struct {
 	host       string
 	port       string
-	tp         int
+	tp         string
 	deployPath string
 	labels     map[string]string
 }
 
-func getNodes() (map[string][]node, error) {
-	rs, err := mysql.M.ExecuteSQL("SELECT * FROM information_schema.cluster_info WHERE type = 'pd'")
+func getComponents() (map[string][]component, error) {
+	pdAddr, err := mysql.M.GetPdAddr()
 	if err != nil {
 		return nil, err
 	}
-	if rs == nil {
-		return nil, fmt.Errorf("please confirm that the pd exists in the cluster")
-	}
-	pdAddr := string(rs.Values[0][1].AsString())
-	defer rs.Close()
-	nodes := make(map[string][]node)
-	if err := getTidb(pdAddr, nodes); err != nil {
+	components := make(map[string][]component)
+	if err := getTiDB(pdAddr, components); err != nil {
 		return nil, err
 	}
-	if err := getStore(pdAddr, nodes); err != nil {
+	if err := getStore(pdAddr, components); err != nil {
 		return nil, err
 	}
-	if err := getPd(pdAddr, nodes); err != nil {
+	if err := getPd(pdAddr, components); err != nil {
 		return nil, err
 	}
-	if err := getGrafana(pdAddr, nodes); err != nil {
+	if err := getGrafana(pdAddr, components); err != nil {
 		return nil, err
 	}
-	return nodes, nil
+	return components, nil
 }
 
-func getTidb(pdAddr string, nodes map[string][]node) error {
+func getTiDB(pdAddr string, components map[string][]component) error {
 	etcdCli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{pdAddr},
 		DialTimeout: 5 * time.Second,
@@ -98,18 +73,17 @@ func getTidb(pdAddr string, nodes map[string][]node) error {
 		Host       string `json:"ip"`
 		DeployPath string `json:"deploy_path"`
 	}
-	db := getNodeTp(tidb)
 	for _, v := range r.Kvs {
 		if strings.HasSuffix(string(v.Key), "info") {
 			if err := json.Unmarshal(v.Value, &data); err != nil {
 				return err
 			}
-			node := node{
+			c := component{
 				host:       data.Host,
 				port:       getTiDBPort(string(v.Key)),
 				deployPath: data.DeployPath,
 			}
-			nodes[db] = append(nodes[db], node)
+			components[tidb] = append(components[tidb], c)
 		}
 	}
 	return nil
@@ -121,7 +95,7 @@ func getTiDBPort(s string) string {
 	return matches[1]
 }
 
-func getStore(pdAddr string, nodes map[string][]node) error {
+func getStore(pdAddr string, components map[string][]component) error {
 	uri := fmt.Sprintf("http://%s/pd/api/v1/stores", pdAddr)
 	resp, err := http.Get(uri)
 	if err != nil {
@@ -143,14 +117,12 @@ func getStore(pdAddr string, nodes map[string][]node) error {
 	if err := json.Unmarshal(resp, &data); err != nil {
 		return err
 	}
-	kv := getNodeTp(tikv)
-	flash := getNodeTp(tiflash)
 	for _, s := range data.Stores {
 		host, port, err := net.SplitHostPort(s.Store.Address)
 		if err != nil {
 			return err
 		}
-		node := node{
+		c := component{
 			host:       host,
 			port:       port,
 			tp:         tikv,
@@ -160,24 +132,38 @@ func getStore(pdAddr string, nodes map[string][]node) error {
 		if len(s.Store.Labels) != 0 {
 			lb := make(map[string]string)
 			for _, v := range s.Store.Labels {
-				if v.Value == "tiflash" {
-					node.tp = tiflash
-					nodes[flash] = append(nodes[flash], node)
+				if v.Value == tiflash {
+					tiflashPort, err := getTiflashPort(c.host, c.deployPath)
+					if err != nil {
+						return err
+					}
+					c.tp = tiflash
+					c.port = tiflashPort
+					components[tiflash] = append(components[tiflash], c)
 					isTiflash = true
 				} else {
 					lb[v.Key] = v.Value
 				}
 			}
-			node.labels = lb
+			c.labels = lb
 		}
 		if !isTiflash {
-			nodes[kv] = append(nodes[kv], node)
+			components[tikv] = append(components[tikv], c)
 		}
 	}
 	return nil
 }
 
-func getPd(pdAddr string, nodes map[string][]node) error {
+func getTiflashPort(host, deployPath string) (string, error) {
+	tiflashConfigPath := strings.Replace(deployPath, "bin/tiflash", "conf/tiflash.toml", -1)
+	port, err := ssh.S.RunSSH(host, fmt.Sprintf("grep tcp_port %s | awk -F '= ' '{print $2}'", tiflashConfigPath))
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(string(port), "\n", "", -1), nil
+}
+
+func getPd(pdAddr string, components map[string][]component) error {
 	uri := fmt.Sprintf("http://%s/pd/api/v1/members", pdAddr)
 	resp, err := http.Get(uri)
 	if err != nil {
@@ -195,31 +181,31 @@ func getPd(pdAddr string, nodes map[string][]node) error {
 	if err := json.Unmarshal(resp, &data); err != nil {
 		return err
 	}
-	p := getNodeTp(pd)
 	for _, member := range data.Members {
 		for _, h := range member.ClientURLs {
 			addr := strings.Split(h, "//")[1]
 			host, port, err := net.SplitHostPort(addr)
-
 			if err != nil {
 				return err
 			}
-			node := node{
+			c := component{
 				host:       host,
 				port:       port,
 				tp:         pd,
 				deployPath: member.DeployPath,
 			}
 			if h == data.Leader.ClientURLs[0] {
-				node.tp = pdL
+				c.tp = pdL
 			}
-			nodes[p] = append(nodes[p], node)
+			components[pd] = append(components[pd], c)
 		}
 	}
 	return nil
 }
 
-func getGrafana(pdAddr string, nodes map[string][]node) error {
+const grafanaEtcd = "/topology/grafana"
+
+func getGrafana(pdAddr string, components map[string][]component) error {
 	etcdCli, err := clientv3.New(clientv3.Config{
 		Endpoints: []string{
 			pdAddr,
@@ -230,7 +216,7 @@ func getGrafana(pdAddr string, nodes map[string][]node) error {
 		return err
 	}
 	defer etcdCli.Close()
-	rs, err := etcdCli.Get(context.Background(), "/topology/grafana")
+	rs, err := etcdCli.Get(context.Background(), grafanaEtcd)
 	if err != nil {
 		return err
 	}
@@ -242,119 +228,27 @@ func getGrafana(pdAddr string, nodes map[string][]node) error {
 	if err := json.Unmarshal(rs.Kvs[0].Value, &data); err != nil {
 		return err
 	}
-	node := node{
+	c := component{
 		host:       data.Host,
 		port:       strconv.Itoa(data.Port),
 		deployPath: data.DeployPath,
 		tp:         grafana,
 	}
-	g := getNodeTp(grafana)
-	nodes[g] = append(nodes[g], node)
+	components[grafana] = append(components[grafana], c)
 	return nil
 }
 
-const killCmd = "kill -9 %s"
-const tidbProcess = "bin/tidb-server -P %s"
-const pdProcess = "advertise-client-urls=http://%s:%s"
-const tikvProcess = "bin/tikv-server --addr 0.0.0.0:%s"
-const tiflashProcess = "bin/tiflash/tiflash"
-const grafanaProcess = "grafana-%s"
-
-func (n *node) kill() error {
-	addr := net.JoinHostPort(n.host, n.port)
-	tp := getNodeTp(n.tp)
-	var psCmd string
-	switch n.tp {
-	case tidb:
-		psCmd = fmt.Sprintf(tidbProcess, n.port)
-	case pd, pdL:
-		psCmd = fmt.Sprintf(pdProcess, n.host, n.port)
-	case tikv:
-		psCmd = fmt.Sprintf(tikvProcess, n.port)
-	case tiflash:
-		psCmd = tiflashProcess
-	case grafana:
-		psCmd = fmt.Sprintf(grafanaProcess, n.port)
-	default:
-		return fmt.Errorf("unsupported type: %s", tp)
-	}
-	processIDs, err := ssh.S.GetProcessID(n.host, psCmd)
-	if err != nil {
-		return err
-	}
-	if len(processIDs) == 0 {
-		log.Logger.Warnf("[KILL] [%s] %s is offline, skip.", tp, addr)
-		return nil
-	}
-	log.Logger.Infof("[KILL] [%s] [%s] - %v", tp, addr, processIDs)
-	for _, pID := range processIDs {
-		o, err := ssh.S.RunSSH(n.host, fmt.Sprintf(killCmd, pID))
-		if err != nil {
-			log.Logger.Warnf("[KILL] [%s] %s {%s} failed: %v: %s", tp, addr, pID, err, string(o))
-		}
-	}
-	return nil
-}
-
-func (n *node) dataCorrupted() error {
-	return fmt.Errorf("no GA")
-}
-
-const systemdPath = "/etc/systemd/system/"
-const alwaysToNo = "sudo sed -i 's/always/no/g' %s"
-const reloadSystemd = "sudo systemctl daemon-reload"
-const noToAlways = "sudo sed -i 's/no/always/g' %s"
-const service = "%s-%s.service"
-
-func (n *node) systemd(a int) error {
-	var systemd string
-	tp := getNodeTp(n.tp)
-	tp = strings.Replace(tp, "(L)", "", -1)
-	tiflashConfigPath := strings.Replace(n.deployPath, "bin/tiflash", "conf/tiflash.toml", -1)
-	switch n.tp {
-	case tiflash:
-		tiflashTcpPort, err := ssh.S.RunSSH(n.host, fmt.Sprintf("grep tcp_port %s | awk -F '= ' '{print $2}'", tiflashConfigPath))
-		if err != nil {
-			return err
-		}
-		systemd = strings.Replace(fmt.Sprintf(service, tp, tiflashTcpPort), "\n", "", -1)
-	default:
-		systemd = fmt.Sprintf(service, tp, n.port)
-	}
-
-	service := filepath.Join(systemdPath, systemd)
-	addr := net.JoinHostPort(n.host, n.port)
-	var c string
-	switch a {
-	case crash:
-		c = fmt.Sprintf(alwaysToNo, service)
-	case recoverSystemd:
-		c = fmt.Sprintf(noToAlways, service)
-		log.Logger.Infof("[RECOVER_SYSTEMD] [%s] %s", tp, addr)
-	}
-	if _, err := ssh.S.RunSSH(n.host, c); err != nil {
-		return err
-	}
-	if _, err := ssh.S.RunSSH(n.host, reloadSystemd); err != nil {
-		return err
-	}
-	if a == crash {
-		return n.kill()
-	}
-	return nil
-}
-
-func (n *node) preCheck() error {
+func (c *component) preCheck() error {
 
 	var o []byte
 	var err error
 	s := ssh.S
 	plugin := s.Carry.Plugin
 	pluginName := filepath.Base(plugin)
-	pluginPath := filepath.Join(n.deployPath, "plugins")
+	pluginPath := filepath.Join(c.deployPath, "plugins")
 	pluginSelf := filepath.Join(pluginPath, pluginName)
 
-	if o, err = s.DirWalk(n.host, pluginPath); err != nil {
+	if o, err = s.DirWalk(c.host, pluginPath); err != nil {
 		return err
 	}
 	if len(o) == 0 && plugin == "" {
@@ -363,11 +257,11 @@ func (n *node) preCheck() error {
 		printPlugins(string(o))
 	} else {
 		log.Logger.Infof("%s is nil, start to set %s.", pluginPath, plugin)
-		target := fmt.Sprintf("%s@%s:%s", s.User, n.host, pluginPath)
+		target := fmt.Sprintf("%s@%s:%s", s.User, c.host, pluginPath)
 		if o, err = s.Transfer(plugin, target); err != nil {
 			return err
 		}
-		if _, err = s.UnZip(n.host, pluginSelf, pluginPath); err != nil {
+		if _, err = s.UnZip(c.host, pluginSelf, pluginPath); err != nil {
 			return err
 		}
 		if _, err = s.Restart("grafana"); err != nil {
@@ -378,11 +272,11 @@ func (n *node) preCheck() error {
 	return nil
 }
 
-func (n *node) render(to string) error {
-	if err := n.preCheck(); err != nil {
+func (c *component) render(to string) error {
+	if err := c.preCheck(); err != nil {
 		return err
 	}
-	tok, err := n.newToken()
+	tok, err := c.newToken()
 	if err != nil {
 		return err
 	}
@@ -393,25 +287,25 @@ func (n *node) render(to string) error {
 	}
 	s := ssh.S
 	uri := "http://%s:%s/render/d-solo/%s/%s-%s?orgId=1&from=%s&to=%s&panelId=%s&width=1000&height=500&scale=3"
-	source := filepath.Join(n.deployPath, "data", "png", "*")
+	source := filepath.Join(c.deployPath, "data", "png", "*")
 	for _, p := range pls {
-		c := fmt.Sprintf(uri, n.host, n.port, p.Org, s.ClusterName, p.Tab, from, now, p.ID) + "&tz=Asia%2FShanghai"
+		cmd := fmt.Sprintf(uri, c.host, c.port, p.Org, s.ClusterName, p.Tab, from, now, p.ID) + "&tz=Asia%2FShanghai"
 		kv := make(map[string]string)
 		kv["Authorization"] = fmt.Sprintf("Bearer %s", tok.Key)
-		out, err := http.NewRequestDo(c, http.MethodGet, nil, kv, "")
+		out, err := http.NewRequestDo(cmd, http.MethodGet, nil, kv, "")
 		if err != nil {
 			return fmt.Errorf("%s failed: %v: %s", c, err, string(out))
 		}
-		sourcePath := fmt.Sprintf("%s@%s:%s", s.User, n.host, source)
+		sourcePath := fmt.Sprintf("%s@%s:%s", s.User, c.host, source)
 		if _, err = s.Transfer(sourcePath, to); err != nil {
 			return err
 		}
-		if _, err = s.Remove(n.host, source); err != nil {
+		if _, err = s.Remove(c.host, source); err != nil {
 			return err
 		}
 		log.Logger.Infof("[RENDER] %s", strings.ToUpper(p.Name))
 	}
-	return n.cleanToken(tok.Key)
+	return c.cleanToken(tok.Key)
 }
 
 type token struct {
@@ -421,8 +315,8 @@ type token struct {
 	Key  string `json:"key"`
 }
 
-func (n *node) newToken() (*token, error) {
-	url := fmt.Sprintf("http://%s:%s/api/auth/keys", n.host, n.port)
+func (c *component) newToken() (*token, error) {
+	url := fmt.Sprintf("http://%s:%s/api/auth/keys", c.host, c.port)
 	payload := fmt.Sprintf(`{"name":"%s", "role":"Admin"}`, dateFormat())
 	auth := http.Auth{
 		Username: "admin",
@@ -444,8 +338,8 @@ func (n *node) newToken() (*token, error) {
 	return &t, nil
 }
 
-func (n *node) cleanToken(key string) error {
-	url := fmt.Sprintf("http://%s:%s/api/auth/keys", n.host, n.port)
+func (c *component) cleanToken(key string) error {
+	url := fmt.Sprintf("http://%s:%s/api/auth/keys", c.host, c.port)
 	kv := make(map[string]string)
 	kv["Authorization"] = fmt.Sprintf("Bearer %s", key)
 	out, err := http.NewRequestDo(url, http.MethodGet, nil, kv, "")
@@ -457,15 +351,15 @@ func (n *node) cleanToken(key string) error {
 		return err
 	}
 	for _, t := range tks {
-		if err := n.dropToken(strconv.Itoa(t.ID)); err != nil {
+		if err := c.dropToken(strconv.Itoa(t.ID)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (n *node) dropToken(id string) error {
-	url := fmt.Sprintf("http://%s:%s/api/auth/keys/%s", n.host, n.port, id)
+func (c *component) dropToken(id string) error {
+	url := fmt.Sprintf("http://%s:%s/api/auth/keys/%s", c.host, c.port, id)
 	auth := http.Auth{
 		Username: "admin",
 		Password: "admin",
@@ -499,9 +393,9 @@ func printPlugins(o string) {
 	log.Logger.Info("have a try now, good luck!")
 }
 
-func getLabelKey(nodes map[string][]node) map[string]bool {
+func getLabelKey(components map[string][]component) map[string]bool {
 	labelKey := make(map[string]bool)
-	for _, s := range nodes[getNodeTp(tikv)] {
+	for _, s := range components[tikv] {
 		for k, _ := range s.labels {
 			labelKey[k] = true
 		}
@@ -509,8 +403,8 @@ func getLabelKey(nodes map[string][]node) map[string]bool {
 	return labelKey
 }
 
-func (n *node) isPdLeader(addr string) string {
-	if n.tp == pdL {
+func (c *component) isPdLeader(addr string) string {
+	if c.tp == pdL {
 		addr += "(L)"
 	}
 	return addr

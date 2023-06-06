@@ -2,6 +2,7 @@ package server
 
 import (
 	"flag"
+	"fmt"
 	ui "github.com/gizak/termui/v3"
 	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
@@ -69,7 +70,12 @@ func New() error {
 			if svr.w.selected == nil || svr.w.treeLength(selected) == 0 {
 				log.Logger.Warnf("selected is 0")
 			} else {
-				return svr.run()
+				if err := svr.run(); err != nil {
+					if !isCompleteSignal(err) {
+						return err
+					}
+					continue
+				}
 			}
 		case ctrlC:
 			return nil
@@ -107,10 +113,10 @@ func (svr *Server) run() error {
 			svr.w.refresh(idx)
 		case ldText := <-j.ldC:
 			svr.w.loader.Rows = append(svr.w.loader.Rows, ldText)
-			svr.w.loader.ScrollBottom()
-			ui.Render(
-				svr.w.loader,
-			)
+			svr.w.loader.ScrollDown()
+			ui.Render(svr.w.loader)
+		case <-j.finishC:
+			return fmt.Errorf(completeSignal)
 		}
 	}
 }
@@ -124,7 +130,6 @@ func parse() error {
 		return err
 	}
 
-	log.Logger.Info("config: ")
 	for k, v := range config.Values() {
 		log.Logger.Infof(" %s == %s", k, v)
 	}
@@ -146,6 +151,7 @@ func parse() error {
 	ld.path = config.Get("loader.path").(string)
 	ld.interval = config.Get("loader.interval").(int64)
 	others = config.Get("other.dir").(string)
+
 	logLevel := config.Get("log.level").(string)
 	switch logLevel {
 	case "debug":

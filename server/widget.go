@@ -38,9 +38,10 @@ const (
 	dataCorrupted
 	recoverSystemd
 	disaster
+	scaleIn
 )
 
-func getAction(i int) string {
+func getOperatorTp(i int) string {
 	switch i {
 	case sql:
 		return "SQL"
@@ -54,15 +55,17 @@ func getAction(i int) string {
 		return "RECOVER_SYSTEMD"
 	case disaster:
 		return "DISASTER"
+	case scaleIn:
+		return "SCALE_IN"
 	default:
 		return ""
 	}
 }
 
 type item struct {
-	value  string
-	action int
-	tp     string
+	value       string
+	operator    int
+	componentTp string
 }
 
 func (i item) String() string {
@@ -108,6 +111,7 @@ func newTree(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Tree {
 func newList(rows []string, t string, x1 int, y1 int, x2 int, y2 int) *widgets.List {
 	list := widgets.NewList()
 	list.Title = t
+	list.WrapText = false
 	list.Rows = rows
 	list.TitleStyle = ui.NewStyle(ui.ColorClear)
 	list.SetRect(x1, y1, x2, y2)
@@ -135,7 +139,7 @@ func newGauge(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Gauge {
 	return gauge
 }
 
-var preAction int
+var pa int
 var others string
 
 func (w *widget) setTreeNodes() error {
@@ -149,35 +153,30 @@ func (w *widget) setTreeNodes() error {
 	}
 	w.tree.SetNodes(treeNodes)
 
-	nodes, err := getNodes()
+	nodes, err := getComponents()
 	if err != nil {
 		return err
 	}
 	labelKey := getLabelKey(nodes)
 	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
 		name := treeNode.Value.String()
-		switch {
-		case isKill(name):
-			preAction = kill
-			appendNodes(nodes, treeNode, "", preAction)
-		case isCrash(name):
-			preAction = crash
-			appendNodes(nodes, treeNode, "", preAction)
-		case isRecoverSystemd(name):
-			preAction = recoverSystemd
-			appendNodes(nodes, treeNode, "", preAction)
-		case isDisaster(name):
-			if len(labelKey) != 0 {
-				for key, _ := range labelKey {
-					appendTreeNode(treeNode, key, "", preAction)
+		if isOperator(name) {
+			pa = whichOperator(name)
+			switch pa {
+			case disaster:
+				if len(labelKey) != 0 {
+					for key, _ := range labelKey {
+						appendTreeNode(treeNode, key, "", pa)
+					}
 				}
-				preAction = disaster
+			default:
+				appendNodes(nodes, treeNode, "", pa)
 			}
 		}
 		for _, n := range nodes[name] {
 			addr := net.JoinHostPort(n.host, n.port)
 			addr = n.isPdLeader(addr)
-			appendTreeNode(treeNode, addr, name, preAction)
+			appendTreeNode(treeNode, addr, name, pa)
 		}
 		if labelKey[name] {
 			visited := make(map[string]bool)
@@ -187,7 +186,7 @@ func (w *widget) setTreeNodes() error {
 					continue
 				}
 				visited[value] = true
-				appendTreeNode(treeNode, value, "", preAction)
+				appendTreeNode(treeNode, value, "", pa)
 			}
 		}
 		return true
@@ -213,7 +212,8 @@ func (w *widget) buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 		name := strings.TrimLeft(line, "\t")
 		node := &widgets.TreeNode{
 			Value: item{
-				value: name, action: sql,
+				value:    name,
+				operator: sql,
 			},
 		}
 		if level == 0 {
@@ -275,20 +275,15 @@ func (w *widget) walkTreeScript() (map[string]script, error) {
 	var err error
 	var sc []string
 	w.tree.Walk(func(node *widgets.TreeNode) bool {
-		name := node.Value.String()
-		action := node.Value.(item).action
-		if node.Nodes == nil {
-			switch {
-			case isSQL(action):
-				sc, err = getScript(name, sql)
-			case isOther(action):
-				sc, err = getScript(name, other)
-			}
+		value := node.Value.String()
+		operator := node.Value.(item).operator
+		if node.Nodes == nil && (operator == sql || operator == other) {
+			sc, err = getScript(value, operator)
 			if err != nil {
 				return true
 			}
-			ss[name] = script{
-				sql: sc, name: name, tp: normal,
+			ss[value] = script{
+				sql: sc, name: value, tp: sql,
 			}
 		}
 		return true
@@ -299,15 +294,15 @@ func (w *widget) walkTreeScript() (map[string]script, error) {
 func (w *widget) right() {
 	selected := w.tree.SelectedNode().Value
 	if len(w.tree.SelectedNode().Nodes) == 0 && !w.contains(selected.String()) {
-		if w.conflict(selected.(item).action) {
+		if w.conflict(selected.(item).operator) {
 			log.Logger.Warnf("conflicting items")
 			return
 		}
 		node := widgets.TreeNode{
 			Value: item{
-				value:  selected.(item).value,
-				action: selected.(item).action,
-				tp:     selected.(item).tp,
+				value:       selected.(item).value,
+				operator:    selected.(item).operator,
+				componentTp: selected.(item).componentTp,
 			},
 		}
 		var newSelectedNode []*widgets.TreeNode
@@ -319,7 +314,7 @@ func (w *widget) right() {
 		w.selected.SetNodes(newSelectedNode)
 		w.selected.Expand()
 		w.selected.ScrollBottom()
-		w.selected.Title = getAction(selected.(item).action)
+		w.selected.Title = getOperatorTp(selected.(item).operator)
 	} else {
 		w.tree.Expand()
 	}
@@ -375,7 +370,7 @@ func (w *widget) conflict(action int) bool {
 	}
 	var a int
 	w.selected.Walk(func(node *widgets.TreeNode) bool {
-		a = node.Value.(item).action
+		a = node.Value.(item).operator
 		return false
 	})
 	return a != action
@@ -404,18 +399,18 @@ func (w *widget) refresh(idx int) {
 	ui.Render(w.processBar, w.selected)
 }
 
-func appendNodes(nodes map[string][]node, treeNode *widgets.TreeNode, tp string, action int) {
+func appendNodes(nodes map[string][]component, treeNode *widgets.TreeNode, tp string, action int) {
 	for name := range nodes {
 		appendTreeNode(treeNode, name, tp, action)
 	}
 }
 
-func appendTreeNode(treeNode *widgets.TreeNode, name, tp string, a int) {
+func appendTreeNode(treeNode *widgets.TreeNode, name, tp string, o int) {
 	treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
 		Value: item{
-			value:  name,
-			tp:     tp,
-			action: a,
+			value:       name,
+			componentTp: tp,
+			operator:    o,
 		},
 	})
 }

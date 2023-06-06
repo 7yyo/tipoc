@@ -14,10 +14,6 @@ import (
 //go:embed "script/*.sql"
 var srt embed.FS
 
-const (
-	normal = iota
-)
-
 const suffix = ".sql"
 const splitLine = "## -"
 const tblName = "${TABLE_NAME}"
@@ -28,20 +24,12 @@ type script struct {
 	sql  []string
 }
 
-func isSQL(a int) bool {
-	return a == sql
-}
-
-func isOther(a int) bool {
-	return a == other
-}
-
-func getScript(name string, a int) ([]string, error) {
+func getScript(name string, o int) ([]string, error) {
 	fName := fmt.Sprintf("%s%s", name, suffix)
 	var fPath string
 	var f fs.File
 	var err error
-	switch a {
+	switch o {
 	case sql:
 		fPath = filepath.Join("script", fName)
 		f, err = srt.Open(fPath)
@@ -56,29 +44,41 @@ func getScript(name string, a int) ([]string, error) {
 	defer f.Close()
 	data, _ := ioutil.ReadAll(f)
 	text := string(data)
-	if a == sql {
+	if o == sql {
 		tName := strings.Split(name, " ")[1]
 		text = strings.ReplaceAll(text, tblName, "poc."+tName)
 	}
 	return strings.Split(text, splitLine), nil
 }
 
-func isKill(s string) bool {
-	return strings.HasPrefix(s, "7.1")
-}
-
-func isCrash(s string) bool {
-	return strings.HasPrefix(s, "7.3")
-}
-
-func isRecoverSystemd(s string) bool {
-	return strings.HasPrefix(s, "7.4")
-}
-
 func isDisaster(s string) bool {
 	return strings.HasPrefix(s, "7.5")
 }
 
-func isDataCorrupted(s string) bool {
-	return strings.HasPrefix(s, "7.2")
+func whichOperator(s string) int {
+	switch {
+	case strings.HasPrefix(s, "5.2"):
+		return scaleIn
+	case strings.HasPrefix(s, "7.1"):
+		return kill
+	case strings.HasPrefix(s, "7.2"):
+		return dataCorrupted
+	case strings.HasPrefix(s, "7.3"):
+		return crash
+	case strings.HasPrefix(s, "7.4"):
+		return recoverSystemd
+	case strings.HasPrefix(s, "7.5"):
+		return disaster
+	default:
+		return 0
+	}
+}
+
+func isOperator(s string) bool {
+	return strings.HasPrefix(s, "5.2") ||
+		strings.HasPrefix(s, "7.1") ||
+		strings.HasPrefix(s, "7.2") ||
+		strings.HasPrefix(s, "7.3") ||
+		strings.HasPrefix(s, "7.4") ||
+		strings.HasPrefix(s, "7.5")
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"pictorial/log"
 	"pictorial/mysql"
+	"pictorial/operator"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,9 +23,10 @@ type job struct {
 }
 
 type channel struct {
-	barC chan int
-	ldC  chan string
-	errC chan error
+	barC    chan int
+	ldC     chan string
+	errC    chan error
+	finishC chan bool
 }
 
 func newJob(ss map[string]script, selected *widgets.Tree) job {
@@ -32,12 +34,15 @@ func newJob(ss map[string]script, selected *widgets.Tree) job {
 		scripts:  ss,
 		selected: selected,
 		channel: channel{
-			barC: make(chan int),
-			ldC:  make(chan string),
-			errC: make(chan error),
+			barC:    make(chan int),
+			ldC:     make(chan string),
+			errC:    make(chan error),
+			finishC: make(chan bool),
 		},
 	}
 }
+
+const completeSignal = "complete_signal"
 
 func (j *job) run() {
 	if err := j.preRun(); err != nil {
@@ -49,7 +54,7 @@ func (j *job) run() {
 		log.Logger.Warn("this cluster has no label, stop")
 		return
 	}
-	switch value.(item).action {
+	switch value.(item).operator {
 	case sql, other:
 		j.runSQL()
 	case disaster:
@@ -57,7 +62,12 @@ func (j *job) run() {
 	default:
 		j.runNodes()
 	}
-	log.Logger.Info("complete, you can quit now.")
+	log.Logger.Infof("complete at %s", j.rd)
+	j.finishC <- true
+}
+
+func isCompleteSignal(err error) bool {
+	return err.Error() == completeSignal
 }
 
 func (j *job) preRun() error {
@@ -109,7 +119,7 @@ func (j *job) runNodes() {
 		time.Sleep(time.Second * 1)
 		cntDown("run items", ld.interval)
 	}
-	nodes, err := getNodes()
+	components, err := getComponents()
 	if err != nil {
 		j.errC <- err
 		return
@@ -117,23 +127,21 @@ func (j *job) runNodes() {
 	var cnt int
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
 		addr := strings.Replace(i.Value.(item).value, "(L)", "", -1)
-		tp := i.Value.(item).tp
-		ac := i.Value.(item).action
+		componentTp := i.Value.(item).componentTp
+		o := i.Value.(item).operator
 		var failMsg = "[%s] %s failed: %v"
-		for _, node := range nodes[tp] {
-			if addr == net.JoinHostPort(node.host, node.port) {
-				switch ac {
-				case kill:
-					err = node.kill()
-				case dataCorrupted:
-					err = node.dataCorrupted()
-				case crash:
-					err = node.systemd(crash)
-				case recoverSystemd:
-					err = node.systemd(recoverSystemd)
+		for _, c := range components[componentTp] {
+			if addr == net.JoinHostPort(c.host, c.port) {
+				b := operator.Builder{
+					Tp:          getOperatorTp(o),
+					ComponentTp: componentTp,
+					Host:        c.host,
+					Port:        c.port,
+					DeployPath:  c.deployPath,
 				}
-				if err != nil {
-					log.Logger.Errorf(failMsg, getAction(ac), addr, err)
+				r, _ := b.Build()
+				if err := r.Execute(); err != nil {
+					log.Logger.Errorf(failMsg, getOperatorTp(o), addr, err)
 				}
 				break
 			}
@@ -144,8 +152,7 @@ func (j *job) runNodes() {
 	})
 	if ld.path != "" {
 		cntDown("render", ld.interval)
-		g := nodes["grafana"][0]
-		if err := g.render(j.rd); err != nil {
+		if err := components["grafana"][0].render(j.rd); err != nil {
 			j.errC <- err
 			return
 		}
@@ -153,32 +160,31 @@ func (j *job) runNodes() {
 }
 
 func (j *job) runLabel() {
-	nodes, err := getNodes()
+	components, err := getComponents()
 	if err != nil {
 		j.errC <- err
 	}
-	kvs := nodes["tikv"]
+	kvs := components[tikv]
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
 		targetLabel := i.Value.String()
 		for _, kv := range kvs {
 			for _, v := range kv.labels {
 				if targetLabel == v {
-					n := node{
-						host:       kv.host,
-						port:       kv.port,
-						tp:         tikv,
-						deployPath: kv.deployPath,
+					b := operator.Builder{
+						Host:        kv.host,
+						Port:        kv.port,
+						Tp:          getOperatorTp(crash),
+						ComponentTp: tikv,
 					}
-					switch i.Value.(item).action {
-					case disaster:
-						if err := n.systemd(crash); err != nil {
-							log.Logger.Errorf("[DISASTER] %s failed: %v", net.JoinHostPort(n.host, n.port), err)
-						}
+					r, _ := b.Build()
+					if err := r.Execute(); err != nil {
+						log.Logger.Errorf("[DISASTER] %s failed: %v", net.JoinHostPort(b.Host, b.Port), err)
 					}
 					break
 				}
 			}
 		}
+		log.Logger.Errorf("[DISASTER] [%s] complete", targetLabel)
 		return true
 	})
 }
@@ -192,15 +198,14 @@ func (j *job) printSelected() {
 }
 
 func (j *job) mkdirRd() error {
-	timeStr := dateFormat()
 	var err error
+	timeStr := dateFormat()
 	if err = os.MkdirAll(timeStr, os.ModePerm); err != nil {
 		return err
 	}
 	if j.rd, err = filepath.Abs(timeStr); err != nil {
 		return err
 	}
-	log.Logger.Info(j.rd)
 	return nil
 }
 

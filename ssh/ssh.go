@@ -80,6 +80,9 @@ func (s *SSH) RunSSH(h, c string) ([]byte, error) {
 	if err := ss.Run(c); err != nil {
 		return stdout.Bytes(), fmt.Errorf(runFailedMsg, c, err, stdout.String(), stderr.String())
 	}
+	if stderr.Len() != 0 {
+		return stdout.Bytes(), fmt.Errorf(runFailedMsg, c, err, stdout.String(), stderr.String())
+	}
 	return stdout.Bytes(), nil
 }
 
@@ -89,7 +92,11 @@ func RunLocal(c string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
+		return stdout.Bytes(), fmt.Errorf(runFailedMsg, c, err, stdout.String(), stderr.String())
+	}
+	if stderr.Len() != 0 && err != nil {
 		return stdout.Bytes(), fmt.Errorf(runFailedMsg, c, err, stdout.String(), stderr.String())
 	}
 	return stderr.Bytes(), nil
@@ -136,5 +143,10 @@ func (s *SSH) Restart(role string) ([]byte, error) {
 
 func (s *SSH) Remove(host, o string) ([]byte, error) {
 	c := fmt.Sprintf("rm -r -f %s", o)
+	return s.RunSSH(host, c)
+}
+
+func (s *SSH) GetProcessIDByPort(host, port string) ([]byte, error) {
+	c := fmt.Sprintf("sudo fuser -n tcp %s/tcp | tail -n 1", port)
 	return s.RunSSH(host, c)
 }
