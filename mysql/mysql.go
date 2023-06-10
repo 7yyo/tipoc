@@ -86,6 +86,40 @@ func (m *MySQL) ExecuteAndWrite(s, rd, name string, idx int32) error {
 	return nil
 }
 
+func (m *MySQL) ExecuteUserAndWrite(s, fName, user, password string) error {
+	var stdout, stderr bytes.Buffer
+	cmdArgs := []string{
+		fmt.Sprintf("-u%s", user),
+		fmt.Sprintf("-p%s", password),
+		fmt.Sprintf("-h%s", m.Host),
+		fmt.Sprintf("-P%s", m.Port),
+		fmt.Sprintf("-e %s", s),
+		"-vvv",
+		"--comments",
+	}
+	if password == "" {
+		cmdArgs = append(cmdArgs, "--skip-password")
+	}
+	cmd := exec.Command("mysql", cmdArgs...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	log.Logger.Debug(cmd)
+	err := cmd.Run()
+	f, _ := os.Create(fName)
+	resultOutput := updateResultOutput(stdout.String())
+	errOutput := updateErrOutput(stderr.String())
+	_, _ = io.WriteString(f, resultOutput)
+	_, _ = io.WriteString(f, errOutput)
+	if stderr.String() != "" && stderr.String() != SqlWarn {
+		if err != nil {
+			return fmt.Errorf("%s: %s", errOutput, err.Error())
+		} else {
+			return fmt.Errorf("%s", errOutput)
+		}
+	}
+	return nil
+}
+
 const resultLine = "--------------"
 const bye = "Bye"
 const SqlWarn = "mysql: [Warning] Using a password on the command line interface can be insecure.\n"

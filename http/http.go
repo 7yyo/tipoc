@@ -3,6 +3,7 @@ package http
 import (
 	"io/ioutil"
 	"net/http"
+	"pictorial/log"
 	"strings"
 )
 
@@ -56,5 +57,6 @@ func NewRequestDo(url, tp string, auth *Auth, kv map[string]string, pl string) (
 	for k, v := range kv {
 		req.Header.Set(k, v)
 	}
+	log.Logger.Debug(url)
 	return Do(req)
 }

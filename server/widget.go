@@ -16,7 +16,7 @@ import (
 //go:embed "*"
 var svr embed.FS
 
-const catalog = "item.catalog"
+const itemCatalog = "item.catalog"
 
 const (
 	up      = "<Up>"
@@ -30,53 +30,13 @@ const (
 	sDelete = "<Backspace>"
 )
 
-const (
-	sql = iota
-	other
-	kill
-	crash
-	dataCorrupted
-	recoverSystemd
-	disaster
-	scaleIn
-)
-
-func getOperatorTp(i int) string {
-	switch i {
-	case sql:
-		return "SQL"
-	case kill:
-		return "KILL"
-	case crash:
-		return "CRASH"
-	case dataCorrupted:
-		return "DATA_CORRUPTED"
-	case recoverSystemd:
-		return "RECOVER_SYSTEMD"
-	case disaster:
-		return "DISASTER"
-	case scaleIn:
-		return "SCALE_IN"
-	default:
-		return ""
-	}
-}
-
-type item struct {
-	value       string
-	operator    int
-	componentTp string
-}
-
-func (i item) String() string {
-	return i.value
-}
+type widgetTp int
 
 const (
-	tree = iota
+	tree widgetTp = iota
 	selected
 	lg
-	pBar
+	processBar
 	ldr
 )
 
@@ -86,7 +46,6 @@ type widget struct {
 	lg         *widgets.List
 	processBar *widgets.Gauge
 	loader     *widgets.List
-	show       *widgets.List
 }
 
 func newTree(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Tree {
@@ -139,69 +98,18 @@ func newGauge(t string, x1 int, y1 int, x2 int, y2 int) *widgets.Gauge {
 	return gauge
 }
 
-var pa int
+var oType operatorTp
 var others string
 
-func (w *widget) setTreeNodes() error {
+func (w *widget) buildTreeByCatalog() error {
 
-	treeNodes, err := w.buildTreeByCatalog()
-	if err != nil {
-		return err
-	}
-	if err := w.appendOthers(&treeNodes); err != nil {
-		return err
-	}
-	w.tree.SetNodes(treeNodes)
-
-	nodes, err := getComponents()
-	if err != nil {
-		return err
-	}
-	labelKey := getLabelKey(nodes)
-	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
-		name := treeNode.Value.String()
-		if isOperator(name) {
-			pa = whichOperator(name)
-			switch pa {
-			case disaster:
-				if len(labelKey) != 0 {
-					for key, _ := range labelKey {
-						appendTreeNode(treeNode, key, "", pa)
-					}
-				}
-			default:
-				appendNodes(nodes, treeNode, "", pa)
-			}
-		}
-		for _, n := range nodes[name] {
-			addr := net.JoinHostPort(n.host, n.port)
-			addr = n.isPdLeader(addr)
-			appendTreeNode(treeNode, addr, name, pa)
-		}
-		if labelKey[name] {
-			visited := make(map[string]bool)
-			for _, s := range nodes["tikv"] {
-				value := s.labels[name]
-				if visited[value] {
-					continue
-				}
-				visited[value] = true
-				appendTreeNode(treeNode, value, "", pa)
-			}
-		}
-		return true
-	})
-	return nil
-}
-
-func (w *widget) buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 	var treeNodes []*widgets.TreeNode
 	var root *widgets.TreeNode
 	var parentNodes []*widgets.TreeNode
 
-	f, err := svr.Open(catalog)
+	f, err := svr.Open(itemCatalog)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 
@@ -210,24 +118,23 @@ func (w *widget) buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 		line := strings.TrimSpace(scanner.Text())
 		level := strings.Count(line, ".")
 		name := strings.TrimLeft(line, "\t")
-		node := &widgets.TreeNode{
-			Value: item{
-				value:    name,
-				operator: sql,
+		node := widgets.TreeNode{
+			Value: option{
+				value: name,
 			},
 		}
 		if level == 0 {
 			if root != nil {
 				treeNodes = append(treeNodes, root)
 			}
-			root = node
+			root = &node
 			parentNodes = []*widgets.TreeNode{root}
 		} else {
 			for len(parentNodes) > level {
 				parentNodes = parentNodes[:len(parentNodes)-1]
 			}
 			parent := parentNodes[len(parentNodes)-1]
-			parent.Nodes = append(parent.Nodes, node)
+			parent.Nodes = append(parent.Nodes, &node)
 			if level > len(parentNodes)-1 {
 				parentNodes = append(parentNodes, parent.Nodes[len(parent.Nodes)-1])
 			} else {
@@ -238,72 +145,138 @@ func (w *widget) buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 	if root != nil {
 		treeNodes = append(treeNodes, root)
 	}
-	return treeNodes, nil
+	appendOthers(&treeNodes)
+	w.tree.SetNodes(treeNodes)
+	w.walkTreeNode()
+
+	components, err := getComponents()
+	if err != nil {
+		return err
+	}
+	labelKey := getLabelKey(components[tikv])
+
+	w.tree.Walk(func(treeNode *widgets.TreeNode) bool {
+		value := treeNode.Value.String()
+		idx := getIdxByName(value)
+		if _, ok := operatorMapping[idx]; ok {
+			oType = operatorMapping[idx]
+			switch oType {
+			case disaster:
+				if len(labelKey) != 0 {
+					for labelName, _ := range labelKey {
+						appendNode(
+							treeNode, labelName, true, -1, disaster)
+					}
+				}
+			default:
+				appendComponent(components, treeNode, oType)
+			}
+		}
+
+		cType := getComponentType(value)
+		for _, n := range components[cType] {
+			addr := net.JoinHostPort(n.host, n.port)
+			addr = n.isPdLeader(addr)
+			appendNode(treeNode, addr, false, cType, oType)
+		}
+		if labelKey[value] {
+			visited := make(map[string]bool)
+			for _, s := range components[tikv] {
+				value := s.labels[value]
+				if visited[value] {
+					continue
+				}
+				visited[value] = true
+				appendNode(treeNode, value, false, tikv, oType)
+			}
+		}
+		return true
+	})
+
+	return nil
 }
 
-func (w *widget) appendOthers(treeNodes *[]*widgets.TreeNode) error {
+func appendOthers(treeNodes *[]*widgets.TreeNode) {
 	if others != "" {
 		dir, err := ioutil.ReadDir(others)
 		if err != nil {
-			return err
+			log.Logger.Error(err)
+			return
 		}
 		if len(dir) != 0 {
 			othersNode := widgets.TreeNode{
-				Value: item{
-					value: others,
-				},
+				Value: newOption(others, true, -1, -1),
 			}
 			*treeNodes = append(*treeNodes, &othersNode)
 			err := filepath.Walk(others, func(path string, info fs.FileInfo, err error) error {
 				if !info.IsDir() {
-					appendTreeNode(&othersNode, strings.TrimSuffix(info.Name(), suffix), "", other)
+					appendNode(
+						&othersNode, info.Name(), false, -1, otherSql)
 				}
 				return nil
 			})
 			if err != nil {
-				return err
+				log.Logger.Error(err)
+				return
 			}
 		} else {
 			log.Logger.Warnf("%s has no script, skip.", others)
 		}
 	}
-	return nil
 }
 
-func (w *widget) walkTreeScript() (map[string]script, error) {
-	ss := make(map[string]script)
-	var err error
-	var sc []string
+func (w *widget) walkTreeNode() {
 	w.tree.Walk(func(node *widgets.TreeNode) bool {
-		value := node.Value.String()
-		operator := node.Value.(item).operator
-		if node.Nodes == nil && (operator == sql || operator == other) {
-			sc, err = getScript(value, operator)
-			if err != nil {
-				return true
-			}
-			ss[value] = script{
-				sql: sc, name: value, tp: sql,
+		v := node.Value.String()
+		// other had process in appendOthers, so jump loop
+		if v == others {
+			return false
+		}
+		if len(node.Nodes) != 0 {
+			node.Value = newOption(v, true, -1, -1)
+		} else {
+			idx := getIdxByName(v)
+			if o, ok := operatorMapping[idx]; ok {
+				node.Value = newOption(v, true, -1, o)
+			} else {
+				if isSafety(v) {
+					node.Value = newOption(v, false, -1, safetySql)
+				} else {
+					node.Value = newOption(v, false, -1, sql)
+				}
 			}
 		}
 		return true
 	})
-	return ss, nil
+	log.Logger.Debug("walk tree node complete.")
+}
+
+func (w *widget) walkTreeScript() (map[string]script, error) {
+	scripts := make(map[string]script)
+	w.tree.Walk(func(node *widgets.TreeNode) bool {
+		if node.Value.(option).isCatalog || node.Value.(option).componentTp != -1 {
+			return true
+		}
+		script, err := getScript(node.Value.(option))
+		if err != nil {
+			log.Logger.Warn(err.Error())
+		}
+		scripts[node.Value.String()] = *script
+		return true
+	})
+	return scripts, nil
 }
 
 func (w *widget) right() {
 	selected := w.tree.SelectedNode().Value
 	if len(w.tree.SelectedNode().Nodes) == 0 && !w.contains(selected.String()) {
-		if w.conflict(selected.(item).operator) {
+		if w.conflict(selected.(option).operatorTp) {
 			log.Logger.Warnf("conflicting items")
 			return
 		}
+		s := selected.(option)
 		node := widgets.TreeNode{
-			Value: item{
-				value:       selected.(item).value,
-				operator:    selected.(item).operator,
-				componentTp: selected.(item).componentTp,
-			},
+			Value: newOption(s.value, s.isCatalog, s.componentTp, s.operatorTp),
 		}
 		var newSelectedNode []*widgets.TreeNode
 		w.selected.Walk(func(treeNode *widgets.TreeNode) bool {
@@ -312,9 +285,8 @@ func (w *widget) right() {
 		})
 		newSelectedNode = append(newSelectedNode, &node)
 		w.selected.SetNodes(newSelectedNode)
-		w.selected.Expand()
 		w.selected.ScrollBottom()
-		w.selected.Title = getOperatorTp(selected.(item).operator)
+		w.selected.Title = getOperatorTp(selected.(option).operatorTp)
 	} else {
 		w.tree.Expand()
 	}
@@ -355,6 +327,11 @@ func (w *widget) removeTreeNode(name string) {
 	w.selected.SetNodes(newSelectedNode)
 }
 
+func (w *widget) cleanSelected() {
+	var emptyTreeNode []*widgets.TreeNode
+	w.selected.SetNodes(emptyTreeNode)
+}
+
 func (w *widget) selected2Arr() []string {
 	var arr []string
 	w.selected.Walk(func(treeNode *widgets.TreeNode) bool {
@@ -364,19 +341,20 @@ func (w *widget) selected2Arr() []string {
 	return arr
 }
 
-func (w *widget) conflict(action int) bool {
+// When selecting, there must be no operator-level conflicts
+func (w *widget) conflict(o operatorTp) bool {
 	if w.selected.SelectedNode() == nil {
 		return false
 	}
-	var a int
+	var oType operatorTp
 	w.selected.Walk(func(node *widgets.TreeNode) bool {
-		a = node.Value.(item).operator
+		oType = node.Value.(option).operatorTp
 		return false
 	})
-	return a != action
+	return oType != o
 }
 
-func (w *widget) treeLength(tp int) int {
+func (w *widget) treeLength(tp widgetTp) int {
 	var t *widgets.Tree
 	switch tp {
 	case tree:
@@ -399,18 +377,29 @@ func (w *widget) refresh(idx int) {
 	ui.Render(w.processBar, w.selected)
 }
 
-func appendNodes(nodes map[string][]component, treeNode *widgets.TreeNode, tp string, action int) {
-	for name := range nodes {
-		appendTreeNode(treeNode, name, tp, action)
+func appendComponent(cs map[componentTp][]component, treeNode *widgets.TreeNode, oType operatorTp) {
+	for cType, _ := range cs {
+		appendNode(treeNode, getComponentTp(cType), true, -1, oType)
 	}
 }
 
-func appendTreeNode(treeNode *widgets.TreeNode, name, tp string, o int) {
+func appendNode(treeNode *widgets.TreeNode, value string, is bool, c componentTp, o operatorTp) {
 	treeNode.Nodes = append(treeNode.Nodes, &widgets.TreeNode{
-		Value: item{
-			value:       name,
-			componentTp: tp,
-			operator:    o,
-		},
+		Value: newOption(
+			value, is, c, o,
+		),
 	})
+}
+
+func newOption(v string, is bool, c componentTp, o operatorTp) option {
+	return option{
+		value:       v,
+		isCatalog:   is,
+		componentTp: c,
+		operatorTp:  o,
+	}
+}
+
+func getIdxByName(name string) string {
+	return strings.Split(name, " ")[0]
 }

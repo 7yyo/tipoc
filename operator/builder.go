@@ -6,20 +6,20 @@ import (
 )
 
 const (
-	kill           = "KILL"
-	crash          = "CRASH"
-	dataCorrupted  = "DATA_CORRUPTED"
-	recoverSystemd = "RECOVER_SYSTEMD"
-	scaleIn        = "SCALE_IN"
-	reboot         = "REBOOT"
+	kill           = "kill"
+	crash          = "crash"
+	dataCorrupted  = "data_corrupted"
+	recoverSystemd = "recover_systemd"
+	scaleIn        = "scale_in"
+	reboot         = "reboot"
 )
 
 type Builder struct {
-	Host        string
-	Port        string
-	Tp          string
-	ComponentTp string
-	DeployPath  string
+	Host       string
+	Port       string
+	OType      string
+	CType      string
+	DeployPath string
 }
 
 type Operator interface {
@@ -27,7 +27,7 @@ type Operator interface {
 }
 
 func (b *Builder) Build() (Operator, error) {
-	switch b.Tp {
+	switch b.OType {
 	case kill:
 		return b.BuildKill()
 	case crash:
@@ -41,7 +41,7 @@ func (b *Builder) Build() (Operator, error) {
 	case reboot:
 		return b.BuildReboot()
 	default:
-		return nil, fmt.Errorf("unknown operator: %s", b.Tp)
+		return nil, fmt.Errorf("unknown operator: %s", b.OType)
 	}
 }
 
@@ -49,7 +49,7 @@ func (b *Builder) BuildKill() (Operator, error) {
 	return &killOperator{
 		host:        b.Host,
 		port:        b.Port,
-		componentTp: b.ComponentTp,
+		componentTp: b.CType,
 	}, nil
 }
 
@@ -57,7 +57,7 @@ func (b *Builder) BuildCrash() (Operator, error) {
 	return &crashOperator{
 		host:        b.Host,
 		port:        b.Port,
-		componentTp: b.ComponentTp,
+		componentTp: b.CType,
 	}, nil
 }
 
@@ -65,7 +65,7 @@ func (b *Builder) BuildRecoverSystemd() (Operator, error) {
 	return &recoverSystemdOperator{
 		host:        b.Host,
 		port:        b.Port,
-		componentTp: b.ComponentTp,
+		componentTp: b.CType,
 	}, nil
 }
 
@@ -81,7 +81,7 @@ func (b *Builder) BuildDataCorrupted() (Operator, error) {
 	return &dataCorruptedOperator{
 		host:        b.Host,
 		port:        b.Port,
-		componentTp: b.ComponentTp,
+		componentTp: b.CType,
 		deployPath:  b.DeployPath,
 	}, nil
 }

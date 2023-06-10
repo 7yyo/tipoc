@@ -9,8 +9,7 @@ type rebootOperator struct {
 }
 
 func (r *rebootOperator) Execute() error {
-	_, err := ssh.S.RunSSH(r.host, "sudo reboot")
-	if err != nil {
+	if _, err := ssh.S.RunSSH(r.host, "sudo reboot"); err != nil {
 		return err
 	}
 	return nil

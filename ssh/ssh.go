@@ -7,7 +7,9 @@ import (
 	"golang.org/x/crypto/ssh"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"pictorial/log"
+	"runtime"
 	"strings"
 )
 
@@ -28,15 +30,13 @@ type Carry struct {
 var S SSH
 
 func (s *SSH) ApplySSHKey() error {
-	tiup, err := exec.LookPath("tiup")
+	tiupRoot, err := s.whichTiup()
 	if err != nil {
 		return err
 	}
-	envRoot := path.Dir(tiup)
-	s.PrivateKey = privateKeyPath(path.Dir(envRoot), S.ClusterName)
-	s.PublicKey = publicKeyPath(path.Dir(envRoot), S.ClusterName)
-	log.Logger.Debug(s.PublicKey)
-	log.Logger.Debug(s.PrivateKey)
+	s.PrivateKey = privateKeyPath(tiupRoot, S.ClusterName)
+	s.PublicKey = publicKeyPath(tiupRoot, S.ClusterName)
+	log.Logger.Debugf("ssh-key = %s, %s", s.PrivateKey, s.PublicKey)
 	return nil
 }
 
@@ -124,7 +124,7 @@ func (s *SSH) DirWalk(host, target string) ([]byte, error) {
 }
 
 func (s *SSH) Transfer(t1, t2 string) ([]byte, error) {
-	c := fmt.Sprintf("scp -i %s %s %s", s.PrivateKey, t1, t2)
+	c := fmt.Sprintf("scp -o StrictHostKeyChecking=no -i %s %s %s", s.PrivateKey, t1, t2)
 	return RunLocal(c)
 }
 
@@ -149,4 +149,36 @@ func (s *SSH) Remove(host, o string) ([]byte, error) {
 func (s *SSH) GetProcessIDByPort(host, port string) ([]byte, error) {
 	c := fmt.Sprintf("sudo fuser -n tcp %s/tcp | tail -n 1", port)
 	return s.RunSSH(host, c)
+}
+
+func (s *SSH) CheckClusterExists() error {
+	if !isLinux() {
+		return nil
+	}
+	tiup, err := s.whichTiup()
+	if err != nil {
+		return err
+	}
+	list := filepath.Join(tiup, "storage", "cluster", "clusters")
+	cmd := exec.Command("ls", list)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s failed: %w", cmd, err)
+	}
+	if !strings.Contains(string(out), s.ClusterName) {
+		return fmt.Errorf("cluster: %s isn't exists", s.ClusterName)
+	}
+	return nil
+}
+
+func (s *SSH) whichTiup() (string, error) {
+	tiup, err := exec.LookPath("tiup")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("/", strings.Trim(path.Dir(tiup), "/bin")), nil
+}
+
+func isLinux() bool {
+	return runtime.GOOS == "linux"
 }

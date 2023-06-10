@@ -3,24 +3,25 @@ package log
 import (
 	"bytes"
 	"fmt"
-	"github.com/hpcloud/tail"
-	"github.com/sirupsen/logrus"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/hpcloud/tail"
+	"github.com/sirupsen/logrus"
 )
 
 var Logger = logrus.New()
 
-const Name = "output.log"
+const LogName = "output.log"
 
 func init() {
-	if err := os.Remove(Name); err != nil {
+	if err := os.Remove(LogName); err != nil {
 		if !os.IsNotExist(err) {
 			panic(err)
 		}
 	}
-	f, err := os.OpenFile(Name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	f, err := os.OpenFile(LogName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		panic(err)
 	}

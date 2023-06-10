@@ -16,10 +16,6 @@ type Server struct {
 }
 
 func New() error {
-
-	if err := parse(); err != nil {
-		return err
-	}
 	if err := ui.Init(); err != nil {
 		return err
 	}
@@ -37,18 +33,38 @@ func New() error {
 
 	go svr.captureLog()
 
-	if err := svr.w.setTreeNodes(); err != nil {
-		return err
+	ue := ui.PollEvents()
+
+	var err error
+	errMsg := "%s, please check and restart."
+	if err = parse(); err != nil {
+		log.Logger.Errorf(errMsg, err.Error())
+		ui.Render(svr.w.lg)
+		for {
+			e := <-ue
+			switch e.ID {
+			case ctrlC:
+				return nil
+			}
+		}
 	}
+
+	if err = svr.w.buildTreeByCatalog(); err != nil {
+		log.Logger.Errorf(errMsg, err.Error())
+		ui.Render(svr.w.lg)
+		for {
+			e := <-ue
+			switch e.ID {
+			case ctrlC:
+				return nil
+			}
+		}
+	}
+
 	ui.Render(
-		svr.w.tree,
-		svr.w.selected,
-		svr.w.lg,
-		svr.w.processBar,
-		svr.w.loader,
+		svr.w.tree, svr.w.selected, svr.w.lg, svr.w.processBar, svr.w.loader,
 	)
 
-	ue := ui.PollEvents()
 	for {
 		e := <-ue
 		switch e.ID {
@@ -81,9 +97,7 @@ func New() error {
 			return nil
 		}
 		ui.Render(
-			svr.w.tree,
-			svr.w.selected,
-			svr.w.processBar,
+			svr.w.tree, svr.w.selected, svr.w.processBar,
 		)
 	}
 }
@@ -116,6 +130,7 @@ func (svr *Server) run() error {
 			svr.w.loader.ScrollDown()
 			ui.Render(svr.w.loader)
 		case <-j.finishC:
+			svr.w.cleanSelected()
 			return fmt.Errorf(completeSignal)
 		}
 	}
@@ -131,7 +146,7 @@ func parse() error {
 	}
 
 	for k, v := range config.Values() {
-		log.Logger.Infof(" %s == %s", k, v)
+		log.Logger.Infof("%s == %s", k, v)
 	}
 
 	mysql.M.Host = config.Get("mysql.host").(string)
@@ -144,6 +159,9 @@ func parse() error {
 	ssh.S.SshPort = config.Get("ssh.sshPort").(string)
 
 	ssh.S.ClusterName = config.Get("cluster.name").(string)
+	if err := ssh.S.CheckClusterExists(); err != nil {
+		return err
+	}
 	ssh.S.Carry.Plugin = config.Get("grafana.plugin").(string)
 	if err := ssh.S.ApplySSHKey(); err != nil {
 		return err
@@ -161,7 +179,7 @@ func parse() error {
 }
 
 func (svr *Server) captureLog() {
-	t, err := log.Tail(log.Name)
+	t, err := log.Tail(log.LogName)
 	if err != nil {
 		panic(err)
 	}

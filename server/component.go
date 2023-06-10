@@ -18,29 +18,65 @@ import (
 	"time"
 )
 
+type componentTp int
+
 const (
-	tidb    = "tidb"
-	pd      = "pd"
-	pdL     = "pd(L)"
-	tikv    = "tikv"
-	tiflash = "tiflash"
-	grafana = "grafana"
+	tidb componentTp = iota
+	pd
+	pdL
+	tikv
+	tiflash
+	grafana
 )
+
+func getComponentTp(tp componentTp) string {
+	switch tp {
+	case tidb:
+		return "tidb"
+	case pd:
+		return "pd"
+	case tikv:
+		return "tikv"
+	case tiflash:
+		return "tiflash"
+	case grafana:
+		return "grafana"
+	default:
+		return ""
+	}
+}
+
+func getComponentType(value string) componentTp {
+	switch value {
+	case "tidb":
+		return tidb
+	case "pd":
+		return pd
+	case "tikv":
+		return tikv
+	case "tiflash":
+		return tiflash
+	case "grafana":
+		return grafana
+	default:
+		return -1
+	}
+}
 
 type component struct {
 	host       string
 	port       string
-	tp         string
+	tp         componentTp
 	deployPath string
 	labels     map[string]string
 }
 
-func getComponents() (map[string][]component, error) {
+func getComponents() (map[componentTp][]component, error) {
 	pdAddr, err := mysql.M.GetPdAddr()
 	if err != nil {
 		return nil, err
 	}
-	components := make(map[string][]component)
+	components := make(map[componentTp][]component)
 	if err := getTiDB(pdAddr, components); err != nil {
 		return nil, err
 	}
@@ -56,7 +92,7 @@ func getComponents() (map[string][]component, error) {
 	return components, nil
 }
 
-func getTiDB(pdAddr string, components map[string][]component) error {
+func getTiDB(pdAddr string, components map[componentTp][]component) error {
 	etcdCli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{pdAddr},
 		DialTimeout: 5 * time.Second,
@@ -95,7 +131,7 @@ func getTiDBPort(s string) string {
 	return matches[1]
 }
 
-func getStore(pdAddr string, components map[string][]component) error {
+func getStore(pdAddr string, components map[componentTp][]component) error {
 	uri := fmt.Sprintf("http://%s/pd/api/v1/stores", pdAddr)
 	resp, err := http.Get(uri)
 	if err != nil {
@@ -132,7 +168,7 @@ func getStore(pdAddr string, components map[string][]component) error {
 		if len(s.Store.Labels) != 0 {
 			lb := make(map[string]string)
 			for _, v := range s.Store.Labels {
-				if v.Value == tiflash {
+				if v.Value == "tiflash" {
 					tiflashPort, err := getTiflashPort(c.host, c.deployPath)
 					if err != nil {
 						return err
@@ -163,7 +199,7 @@ func getTiflashPort(host, deployPath string) (string, error) {
 	return strings.Replace(string(port), "\n", "", -1), nil
 }
 
-func getPd(pdAddr string, components map[string][]component) error {
+func getPd(pdAddr string, components map[componentTp][]component) error {
 	uri := fmt.Sprintf("http://%s/pd/api/v1/members", pdAddr)
 	resp, err := http.Get(uri)
 	if err != nil {
@@ -205,7 +241,7 @@ func getPd(pdAddr string, components map[string][]component) error {
 
 const grafanaEtcd = "/topology/grafana"
 
-func getGrafana(pdAddr string, components map[string][]component) error {
+func getGrafana(pdAddr string, components map[componentTp][]component) error {
 	etcdCli, err := clientv3.New(clientv3.Config{
 		Endpoints: []string{
 			pdAddr,
@@ -264,10 +300,10 @@ func (c *component) preCheck() error {
 		if _, err = s.UnZip(c.host, pluginSelf, pluginPath); err != nil {
 			return err
 		}
-		if _, err = s.Restart("grafana"); err != nil {
-			return err
-		}
 		log.Logger.Infof("%s -> %s complete.", plugin, pluginPath)
+	}
+	if _, err = s.Restart("grafana"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -282,19 +318,31 @@ func (c *component) render(to string) error {
 	}
 	now, from := unixDuration()
 	pls, err := panel.GetPanels()
+	log.Logger.Infof("render cnt: %d", len(pls))
 	if err != nil {
 		return err
 	}
 	s := ssh.S
 	uri := "http://%s:%s/render/d-solo/%s/%s-%s?orgId=1&from=%s&to=%s&panelId=%s&width=1000&height=500&scale=3"
 	source := filepath.Join(c.deployPath, "data", "png", "*")
+	dataPath := filepath.Join(c.deployPath, "data", "png")
+	time.Sleep(3 * time.Second)
 	for _, p := range pls {
 		cmd := fmt.Sprintf(uri, c.host, c.port, p.Org, s.ClusterName, p.Tab, from, now, p.ID) + "&tz=Asia%2FShanghai"
-		kv := make(map[string]string)
-		kv["Authorization"] = fmt.Sprintf("Bearer %s", tok.Key)
+		kv := map[string]string{
+			"Authorization": fmt.Sprintf("Bearer %s", tok.Key),
+		}
 		out, err := http.NewRequestDo(cmd, http.MethodGet, nil, kv, "")
 		if err != nil {
 			return fmt.Errorf("%s failed: %v: %s", c, err, string(out))
+		}
+		out, err = ssh.S.DirWalk(c.host, dataPath)
+		if err != nil {
+			return err
+		}
+		if len(out) == 0 {
+			log.Logger.Warnf("render failed, 'grep 'eror' %s/log/grafana.log', skip: %s", p.Name, c.deployPath)
+			continue
 		}
 		sourcePath := fmt.Sprintf("%s@%s:%s", s.User, c.host, source)
 		if _, err = s.Transfer(sourcePath, to); err != nil {
@@ -303,7 +351,7 @@ func (c *component) render(to string) error {
 		if _, err = s.Remove(c.host, source); err != nil {
 			return err
 		}
-		log.Logger.Infof("[RENDER] %s", strings.ToUpper(p.Name))
+		log.Logger.Infof("[RENDER] %s", p.Name)
 	}
 	return c.cleanToken(tok.Key)
 }
@@ -322,8 +370,9 @@ func (c *component) newToken() (*token, error) {
 		Username: "admin",
 		Password: "admin",
 	}
-	kv := make(map[string]string)
-	kv["Content-Type"] = "application/json"
+	kv := map[string]string{
+		"Content-Type": "application/json",
+	}
 	out, err := http.NewRequestDo(url, http.MethodPost, &auth, kv, payload)
 	if err != nil {
 		return nil, err
@@ -340,8 +389,9 @@ func (c *component) newToken() (*token, error) {
 
 func (c *component) cleanToken(key string) error {
 	url := fmt.Sprintf("http://%s:%s/api/auth/keys", c.host, c.port)
-	kv := make(map[string]string)
-	kv["Authorization"] = fmt.Sprintf("Bearer %s", key)
+	kv := map[string]string{
+		"Authorization": fmt.Sprintf("Bearer %s", key),
+	}
 	out, err := http.NewRequestDo(url, http.MethodGet, nil, kv, "")
 	if err != nil {
 		return err
@@ -364,8 +414,9 @@ func (c *component) dropToken(id string) error {
 		Username: "admin",
 		Password: "admin",
 	}
-	kv := make(map[string]string)
-	kv["Content-Type"] = "application/json"
+	kv := map[string]string{
+		"Content-Type": "application/json",
+	}
 	out, err := http.NewRequestDo(url, http.MethodDelete, &auth, kv, "")
 	if err != nil {
 		return err
@@ -393,9 +444,9 @@ func printPlugins(o string) {
 	log.Logger.Info("have a try now, good luck!")
 }
 
-func getLabelKey(components map[string][]component) map[string]bool {
+func getLabelKey(tikv []component) map[string]bool {
 	labelKey := make(map[string]bool)
-	for _, s := range components[tikv] {
+	for _, s := range tikv {
 		for k, _ := range s.labels {
 			labelKey[k] = true
 		}
@@ -405,7 +456,7 @@ func getLabelKey(components map[string][]component) map[string]bool {
 
 func (c *component) isPdLeader(addr string) string {
 	if c.tp == pdL {
-		addr += "(L)"
+		return fmt.Sprintf("%s(L)", addr)
 	}
 	return addr
 }
