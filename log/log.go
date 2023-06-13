@@ -13,15 +13,13 @@ import (
 
 var Logger = logrus.New()
 
-const LogName = "output.log"
-
-func init() {
-	if err := os.Remove(LogName); err != nil {
+func InitLogger(name string) {
+	if err := os.Remove(name); err != nil {
 		if !os.IsNotExist(err) {
 			panic(err)
 		}
 	}
-	f, err := os.OpenFile(LogName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +41,7 @@ func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func Tail(logName string) (*tail.Tail, error) {
+func Track(logName string) (*tail.Tail, error) {
 	return tail.TailFile(logName, tail.Config{
 		ReOpen: true,
 		Follow: true,

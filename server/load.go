@@ -10,32 +10,33 @@ import (
 	"time"
 )
 
-type loader struct {
-	path     string
+type load struct {
+	cmd      string
 	interval int64
+	sleep    time.Duration
 }
 
-var ld loader
+var ld load
 
-func (l *loader) run(lgName string, errC chan error) {
+func (l *load) run(lgName string, errC chan error) {
 	lf, err := os.Create(lgName)
 	if err != nil {
 		errC <- err
 	}
 	defer lf.Close()
-	log.Logger.Info(l.path)
-	cmd := exec.Command("sh", "-c", l.path)
+	log.Logger.Info(l.cmd)
+	cmd := exec.Command("sh", "-c", l.cmd)
 	cmd.Stdout = io.MultiWriter(lf)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err = cmd.Run(); err != nil {
-		errC <- fmt.Errorf("[LOADER] failed: %v: %s", err, stderr.String())
+		errC <- fmt.Errorf("[load] failed: %v: %s", err, stderr.String())
 	}
 }
 
-func (l *loader) captureLoaderLog(name string, errC chan error, ldC chan string) {
+func (l *load) captureLoaderLog(name string, errC chan error, ldC chan string) {
 	time.Sleep(1 * time.Second)
-	t, err := log.Tail(name)
+	t, err := log.Track(name)
 	if err != nil {
 		errC <- err
 	}

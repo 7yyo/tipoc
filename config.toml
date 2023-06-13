@@ -1,32 +1,25 @@
+[log]
+level = "info"
+
 [cluster]
 name = "tidb-test"
+plugin = ""
 
 [mysql]
-#host = "101.43.226.154"
-#port = "4000"
 host = "10.2.103.202"
 port = "5000"
 user = "root"
 password = ""
 
 [ssh]
-#user = "root"
-#password = "Yuyang1203"
 user = "tidb"
-password = "tidb"
 sshPort = "22"
 
-[loader]
-# path = "/home/tidb/.tiup/bin/tiup bench tpcc -H 10.2.103.64 -P 2222 -D tpcc --warehouses 1 --threads 1 --time 10m run"
-path = ""
+[load]
+cmd = ""
 interval = 0
+sleep = 10
 
-[grafana]
-#plugin = "/home/tidb/pingcap-yuyang/plugin-linux-x64-glibc.zip"
-plugin = ""
 [other]
 dir = "/Users/yuyang/go/src/pictorial/other"
-
-[log]
-level = "info"
 

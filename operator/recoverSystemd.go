@@ -30,6 +30,6 @@ func (r *recoverSystemdOperator) Execute() error {
 		return err
 	}
 	addr := net.JoinHostPort(r.host, r.port)
-	log.Logger.Infof("[RECOVER_SYSTEMD] [%s] %s", nodeTp, addr)
+	log.Logger.Infof("[recover_systemd] [%s] %s", nodeTp, addr)
 	return nil
 }

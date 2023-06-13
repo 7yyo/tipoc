@@ -73,7 +73,7 @@ func (b *Builder) BuildScaleIn() (Operator, error) {
 	return &scaleInOperator{
 		host:        b.Host,
 		port:        b.Port,
-		clusterName: ssh.S.ClusterName,
+		clusterName: ssh.S.Cluster.Name,
 	}, nil
 }
 

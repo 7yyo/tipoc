@@ -60,3 +60,9 @@ func NewRequestDo(url, tp string, auth *Auth, kv map[string]string, pl string) (
 	log.Logger.Debug(url)
 	return Do(req)
 }
+
+const Header = "http://"
+
+func ClearHttpHeader(v string) string {
+	return strings.TrimPrefix(v, Header)
+}

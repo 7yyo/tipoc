@@ -123,9 +123,9 @@
         6.2.3 role_authority_management
     6.3 password_complexity
 7 high_availability
-    7.1 kill
-    7.2 data_corrupted
-    7.3 crash
-    7.4 recover_systemd
+    7.1 recover_systemd
+    7.2 kill
+    7.3 data_corrupted
+    7.4 crash
     7.5 disaster
     7.6 reboot

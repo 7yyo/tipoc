@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"pictorial/log"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -56,6 +57,9 @@ func (m *MySQL) ResetDB() error {
 		return err
 	}
 	if _, err := m.ExecuteSQL("CREATE DATABASE poc"); err != nil {
+		return err
+	}
+	if _, err := m.ExecuteSQL("SET GLOBAL validate_password.enable = OFF;"); err != nil {
 		return err
 	}
 	return nil
@@ -226,7 +230,23 @@ func (m *MySQL) GetPdAddr() (string, error) {
 	}
 	defer rs.Close()
 	if rs == nil {
-		return "", fmt.Errorf("please confirm that the pd exists in the cluster")
+		return "", fmt.Errorf("please confirm that the [pd] exists in the cluster")
 	}
-	return string(rs.Values[0][1].AsString()), nil
+	pd := string(rs.Values[0][1].AsString())
+	log.Logger.Debug("pd = %s", pd)
+	return pd, nil
+}
+
+func (m *MySQL) GetTiDBHostStatusPort() (string, string, error) {
+	rs, err := m.ExecuteSQL("SELECT * FROM information_schema.tidb_servers_info")
+	if err != nil {
+		return "", "", err
+	}
+	defer rs.Close()
+	if rs == nil {
+		return "", "", fmt.Errorf("please confirm that the [tidb] exists in the cluster")
+	}
+	host := string(rs.Values[0][1].AsString())
+	statusPort := strconv.FormatInt(rs.Values[0][3].AsInt64(), 10)
+	return host, statusPort, nil
 }

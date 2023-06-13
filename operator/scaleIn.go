@@ -19,6 +19,6 @@ func (s *scaleInOperator) Execute() error {
 	if _, err := ssh.RunLocal(c); err != nil {
 		return err
 	}
-	log.Logger.Infof("[SCALE] %s", addr)
+	log.Logger.Infof("[scale_in] %s", addr)
 	return nil
 }

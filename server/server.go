@@ -6,141 +6,130 @@ import (
 	ui "github.com/gizak/termui/v3"
 	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
+	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/mysql"
 	"pictorial/ssh"
+	"pictorial/widget"
+	"time"
 )
 
+const logName = "output.log"
+
 type Server struct {
-	w *widget
+	w *widget.Widget
 }
 
-func New() error {
+func New() {
+
+	log.InitLogger(logName)
+
 	if err := ui.Init(); err != nil {
-		return err
+		panic(err)
 	}
 	defer ui.Close()
-	x, y := ui.TerminalDimensions()
-	svr := Server{
-		w: &widget{
-			tree:       newTree("tree", 0, 0, x/3, y/2),
-			selected:   newTree("", x/3, 0, 2*x/3, y/2),
-			lg:         newList(nil, "log", 0, int(float64(y)*0.93), 2*x/3, int((float64(y)/10)*5)),
-			processBar: newGauge("processBar", 0, int(float64(y)*0.94), 2*x/3, y-1),
-			loader:     newList(nil, "loader", 2*x/3, 0, x, y-1),
+
+	if err := initConfig(); err != nil {
+		panic(err)
+	}
+
+	s := Server{
+		w: &widget.Widget{
+			T: widget.CreateTree(),
+			C: widget.NewChosen(),
+			O: widget.NewOutput(),
+			P: widget.NewProcessBar(),
+			L: widget.NewLoader(),
 		},
 	}
 
-	go svr.captureLog()
+	go s.captureLog()
+
+	ui.Render(s.w.T, s.w.C, s.w.O, s.w.P, s.w.L)
 
 	ue := ui.PollEvents()
-
-	var err error
-	errMsg := "%s, please check and restart."
-	if err = parse(); err != nil {
-		log.Logger.Errorf(errMsg, err.Error())
-		ui.Render(svr.w.lg)
-		for {
-			e := <-ue
-			switch e.ID {
-			case ctrlC:
-				return nil
-			}
-		}
-	}
-
-	if err = svr.w.buildTreeByCatalog(); err != nil {
-		log.Logger.Errorf(errMsg, err.Error())
-		ui.Render(svr.w.lg)
-		for {
-			e := <-ue
-			switch e.ID {
-			case ctrlC:
-				return nil
-			}
-		}
-	}
-
-	ui.Render(
-		svr.w.tree, svr.w.selected, svr.w.lg, svr.w.processBar, svr.w.loader,
-	)
-
 	for {
 		e := <-ue
 		switch e.ID {
-		case up:
-			svr.w.tree.ScrollUp()
-		case down:
-			svr.w.tree.ScrollDown()
-		case left:
-			svr.w.tree.Collapse()
-		case right:
-			svr.w.right()
-		case sUp:
-			svr.w.selected.ScrollUp()
-		case sDown:
-			svr.w.selected.ScrollDown()
-		case sDelete:
-			svr.w.removeSelected()
-		case enter:
-			if svr.w.selected == nil || svr.w.treeLength(selected) == 0 {
-				log.Logger.Warnf("selected is 0")
+		case "<Up>":
+			s.w.T.ScrollUp()
+		case "<Down>":
+			s.w.T.ScrollDown()
+		case "<Left>":
+			s.w.T.Collapse()
+		case "<Right>":
+			s.w.ScrollRight()
+		case ",":
+			s.w.C.ScrollUp()
+		case ".":
+			s.w.C.ScrollDown()
+		case "<Backspace>":
+			s.w.ScrollBackSpace()
+		case "<Enter>":
+			if widget.TreeLength(s.w.C) == 0 {
+				log.Logger.Warnf("selected is empty.")
 			} else {
-				if err := svr.run(); err != nil {
+				widget.ScrollTopTree(s.w.C)
+				if err := s.run(); err != nil {
 					if !isCompleteSignal(err) {
-						return err
+						return
 					}
 					continue
 				}
 			}
-		case ctrlC:
-			return nil
+		case "<C-c>":
+			return
 		}
-		ui.Render(
-			svr.w.tree, svr.w.selected, svr.w.processBar,
-		)
+		ui.Render(s.w.T, s.w.C, s.w.P)
 	}
 }
 
-func (svr *Server) run() error {
+func (s *Server) run() error {
 
-	ss, err := svr.w.walkTreeScript()
+	examples, err := s.w.WalkTreeScript()
 	if err != nil {
 		return err
 	}
-	j := newJob(ss, svr.w.selected)
-	svr.w.selected.ScrollTop()
-	ui.Render(
-		svr.w.selected,
-	)
+
+	cs, err := comp.New()
+	if err != nil {
+		return err
+	}
+
+	j := newJob(examples, s.w.C, cs.Map)
 	go j.run()
+
 	ue := ui.PollEvents()
 	for {
 		select {
 		case e := <-ue:
-			if e.ID == ctrlC {
+			if e.ID == "<C-c>" {
 				return nil
 			}
 		case err := <-j.errC:
 			log.Logger.Error(err)
 		case idx := <-j.barC:
-			svr.w.refresh(idx)
+			s.w.RefreshProcessBar(idx)
 		case ldText := <-j.ldC:
-			svr.w.loader.Rows = append(svr.w.loader.Rows, ldText)
-			svr.w.loader.ScrollDown()
-			ui.Render(svr.w.loader)
-		case <-j.finishC:
-			svr.w.cleanSelected()
+			s.w.L.Rows = append(s.w.L.Rows, ldText)
+			s.w.L.ScrollDown()
+			ui.Render(s.w.L)
+		case <-j.completeC:
+			widget.CleanTree(s.w.C)
 			return fmt.Errorf(completeSignal)
 		}
 	}
 }
 
-func parse() error {
-	var c string
-	flag.StringVar(&c, "c", "./config.toml", "")
+const defaultCfg = "config.toml"
+
+func initConfig() error {
+
+	var cfg string
+	flag.StringVar(&cfg, "c", defaultCfg, "")
 	flag.Parse()
-	config, err := toml.LoadFile(c)
+
+	config, err := toml.LoadFile(cfg)
 	if err != nil {
 		return err
 	}
@@ -154,40 +143,43 @@ func parse() error {
 	mysql.M.User = config.Get("mysql.user").(string)
 	mysql.M.Password = config.Get("mysql.password").(string)
 
-	ssh.S.User = config.Get("ssh.user").(string)
-	ssh.S.Password = config.Get("ssh.password").(string)
-	ssh.S.SshPort = config.Get("ssh.sshPort").(string)
+	comp.PdAddr, err = mysql.M.GetPdAddr()
+	if err != nil {
+		return err
+	}
 
-	ssh.S.ClusterName = config.Get("cluster.name").(string)
-	if err := ssh.S.CheckClusterExists(); err != nil {
+	ssh.S.User = config.Get("ssh.user").(string)
+	ssh.S.SshPort = config.Get("ssh.sshPort").(string)
+	ssh.S.Cluster.Name = config.Get("cluster.name").(string)
+	if err := ssh.S.CheckClusterName(); err != nil {
 		return err
 	}
-	ssh.S.Carry.Plugin = config.Get("grafana.plugin").(string)
-	if err := ssh.S.ApplySSHKey(); err != nil {
+	ssh.S.Cluster.Plugin = config.Get("cluster.plugin").(string)
+	if err := ssh.S.GetSSHKey(); err != nil {
 		return err
 	}
-	ld.path = config.Get("loader.path").(string)
-	ld.interval = config.Get("loader.interval").(int64)
-	others = config.Get("other.dir").(string)
+	ld.cmd = config.Get("load.cmd").(string)
+	ld.interval = config.Get("load.interval").(int64)
+	ld.sleep = time.Duration(config.Get("load.sleep").(int64))
 
 	logLevel := config.Get("log.level").(string)
 	switch logLevel {
 	case "debug":
 		log.Logger.SetLevel(logrus.DebugLevel)
 	}
+
+	widget.OtherConfig = config.Get("other.dir").(string)
 	return nil
 }
 
-func (svr *Server) captureLog() {
-	t, err := log.Tail(log.LogName)
+func (s *Server) captureLog() {
+	t, err := log.Track(logName)
 	if err != nil {
 		panic(err)
 	}
 	for l := range t.Lines {
-		svr.w.lg.Rows = append(svr.w.lg.Rows, l.Text)
-		svr.w.lg.ScrollBottom()
-		ui.Render(
-			svr.w.lg,
-		)
+		s.w.O.Rows = append(s.w.O.Rows, l.Text)
+		s.w.O.ScrollBottom()
+		ui.Render(s.w.O)
 	}
 }

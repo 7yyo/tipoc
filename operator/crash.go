@@ -36,13 +36,13 @@ func (c *crashOperator) Execute() error {
 	out, _ := ssh.S.GetProcessIDByPort(c.host, c.port)
 	processID := string(out)
 	if len(processID) == 0 {
-		log.Logger.Warnf("[CRASH] [%s] %s is offline, skip.", nodeTp, addr)
+		log.Logger.Warnf("[crash] [%s] %s is offline, skip.", nodeTp, addr)
 		return nil
 	}
-	log.Logger.Infof("[CRASH] [%s] [%s] - %v", nodeTp, addr, processID)
+	log.Logger.Infof("[crash] [%s] [%s] - %v", nodeTp, addr, processID)
 	o, err := ssh.S.RunSSH(c.host, fmt.Sprintf("kill -9 %s", processID))
 	if err != nil {
-		log.Logger.Warnf("[CRASH] [%s] %s {%s} failed: %v: %s", nodeTp, addr, processID, err, string(o))
+		log.Logger.Warnf("[crash] [%s] %s {%s} failed: %v: %s", nodeTp, addr, processID, err, string(o))
 	}
 	return nil
 }
