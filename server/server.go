@@ -1,12 +1,9 @@
 package server
 
 import (
-	"flag"
 	"fmt"
 	ui "github.com/gizak/termui/v3"
-	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
-	"os"
 	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/mysql"
@@ -50,6 +47,10 @@ func New() {
 	for {
 		e := <-ue
 		switch e.ID {
+		case "a":
+			if previousKey == "a" {
+				s.w.AppendAllScripts()
+			}
 		case "g":
 			if previousKey == "g" {
 				s.w.T.ScrollTop()
@@ -84,7 +85,7 @@ func New() {
 			return
 		}
 
-		if previousKey == "g" {
+		if previousKey == "g" || previousKey == "a" {
 			previousKey = ""
 		} else {
 			previousKey = e.ID
@@ -131,16 +132,11 @@ func (s *Server) run() error {
 	}
 }
 
-const defaultCfg = "config.toml"
-
 func prepare() error {
 
-	var cfg string
-	flag.StringVar(&cfg, "c", defaultCfg, "")
-	flag.Parse()
-
 	log.InitLogger(logName)
-	config, err := toml.LoadFile(cfg)
+
+	config, err := parseC()
 	if err != nil {
 		return err
 	}
@@ -197,12 +193,8 @@ func prepare() error {
 			log.Logger.SetLevel(logrus.DebugLevel)
 		}
 	}
-
 	if config.Get(widget.OtherConfig) != nil {
 		widget.OtherConfig = config.Get(otherDir).(string)
-	}
-	if err := os.MkdirAll(rd, os.ModePerm); err != nil {
-		return err
 	}
 	return nil
 }

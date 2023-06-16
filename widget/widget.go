@@ -103,7 +103,7 @@ func NewProcessBar() *widgets.Gauge {
 	p := widgets.NewGauge()
 	p.Title = ProcessBar
 	p.Percent = 0
-	p.SetRect(0, int(float64(y)*0.93), 2*x/3, y-1)
+	p.SetRect(0, int(float64(y)*0.94), 2*x/3, y-1)
 	p.BarColor = ui.ColorGreen
 	p.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	p.TitleStyle = ui.NewStyle(ui.ColorClear)
@@ -190,4 +190,19 @@ func (w *Widget) RefreshProcessBar(idx int) {
 	w.P.Percent = int(x) % 101
 	w.C.ScrollDown()
 	ui.Render(w.P, w.C)
+}
+
+func (w *Widget) AppendAllScripts() {
+	var c []*widgets.TreeNode
+	w.T.Walk(func(node *widgets.TreeNode) bool {
+		switch e := node.Value.(type) {
+		case *Example:
+			if e.OType == Script || e.OType == OtherScript || e.OType == SafetyScript {
+				c = append(c, node)
+			}
+		}
+		return true
+	})
+	w.C.SetNodes(c)
+	w.T.CollapseAll()
 }

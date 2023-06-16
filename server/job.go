@@ -23,6 +23,7 @@ type job struct {
 	examples   map[string][]string
 	components map[comp.CType][]comp.Component
 	channel
+	rd string
 }
 
 type channel struct {
@@ -35,6 +36,9 @@ type channel struct {
 const rd = "./result"
 
 func newJob(e map[string][]string, s *widgets.Tree, cs map[comp.CType][]comp.Component) job {
+	if err := os.Mkdir(rd, os.ModePerm); err != nil {
+		panic(err)
+	}
 	return job{
 		examples:   e,
 		list:       s,
@@ -45,6 +49,7 @@ func newJob(e map[string][]string, s *widgets.Tree, cs map[comp.CType][]comp.Com
 			errC:      make(chan error),
 			completeC: make(chan bool),
 		},
+		rd: rd,
 	}
 }
 
@@ -55,19 +60,44 @@ func (j *job) run() {
 	switch job.OType {
 	case widget.Script, widget.OtherScript:
 		j.runScript()
-	case widget.Disaster:
-		j.runLabel()
 	case widget.SafetyScript:
 		j.runSafety()
-	case widget.LoadDataTPCC:
-		j.runLoadData()
 	default:
-		j.runComponent()
+		if err := j.createOTypeResult(); err != nil {
+			j.errC <- err
+			return
+		}
+		switch job.OType {
+		case widget.ScaleIn, widget.Kill, widget.DataCorrupted, widget.Crash, widget.Reboot, widget.Disaster:
+			if ld.cmd != "" {
+				ldName := filepath.Join(j.rd, "loader.log")
+				go ld.run(ldName, j.channel.errC)
+				go ld.captureLoaderLog(ldName, j.errC, j.ldC)
+				time.Sleep(time.Second * 1)
+				cntDown("run items", ld.interval)
+			}
+		}
+		switch job.OType {
+		case widget.Disaster:
+			j.runLabel()
+		case widget.LoadDataTPCC:
+			j.runLoadData()
+		default:
+			j.runComponent()
+		}
+		switch job.OType {
+		case widget.ScaleIn, widget.Kill, widget.DataCorrupted, widget.Crash, widget.Reboot, widget.Disaster:
+			if err := j.components[comp.Grafana][0].Render(j.rd); err != nil {
+				j.errC <- err
+				return
+			}
+		}
+		if _, err := ssh.S.Transfer(ssh.ShellLog, j.rd); err != nil {
+			j.errC <- err
+			return
+		}
 	}
-	if err := ssh.CleanShellLog(); err != nil {
-		j.errC <- err
-	}
-	log.Logger.Infof("complete at %s", rd)
+	log.Logger.Infof("complete at %s", j.rd)
 	j.completeC <- true
 }
 
@@ -110,18 +140,6 @@ func (j *job) runScript() {
 }
 
 func (j *job) runComponent() {
-	oTypeResult, err := j.createOTypeResult()
-	if err != nil {
-		j.errC <- err
-		return
-	}
-	if ld.cmd != "" {
-		ldName := filepath.Join(oTypeResult, "loader.log")
-		go ld.run(ldName, j.channel.errC)
-		go ld.captureLoaderLog(ldName, j.errC, j.ldC)
-		time.Sleep(time.Second * 1)
-		cntDown("run items", ld.interval)
-	}
 	var cnt int
 	j.list.Walk(func(i *widgets.TreeNode) bool {
 		cnt++
@@ -156,28 +174,9 @@ func (j *job) runComponent() {
 		return true
 	})
 	cntDown("render", ld.interval)
-	if err := j.components[comp.Grafana][0].Render(oTypeResult); err != nil {
-		j.errC <- err
-		return
-	}
-	if _, err := ssh.S.Transfer(ssh.ShellLog, oTypeResult); err != nil {
-		j.errC <- err
-	}
 }
 
 func (j *job) runLabel() {
-	oTypeResult, err := j.createOTypeResult()
-	if err != nil {
-		j.errC <- err
-		return
-	}
-	if ld.cmd != "" {
-		ldName := filepath.Join(oTypeResult, "loader.log")
-		go ld.run(ldName, j.channel.errC)
-		go ld.captureLoaderLog(ldName, j.errC, j.ldC)
-		time.Sleep(time.Second * 1)
-		cntDown("run items", ld.interval)
-	}
 	kvs := j.components[comp.TiKV]
 	j.list.Walk(func(i *widgets.TreeNode) bool {
 		targetLabel := i.Value.String()
@@ -202,13 +201,7 @@ func (j *job) runLabel() {
 		return true
 	})
 	cntDown("render", ld.interval)
-	if err := j.components[comp.Grafana][0].Render(oTypeResult); err != nil {
-		j.errC <- err
-		return
-	}
-	if _, err := ssh.S.Transfer(ssh.ShellLog, oTypeResult); err != nil {
-		j.errC <- err
-	}
+
 }
 
 func (j *job) runLoadData() {
@@ -218,16 +211,17 @@ func (j *job) runLoadData() {
 		var lName string
 		switch e.OType {
 		case widget.LoadDataTPCC:
+			warehouses := 10
+			threads := 10
 			tiupRoot, err := ssh.S.WhichTiup()
 			if err != nil {
 				j.errC <- err
 			}
-			lName = fmt.Sprintf("%s.log", widget.GetOTypeValue(e.OType))
-			log.Logger.Infof("[%s] warehouses: 20, threads: 10, database: %s", widget.GetOTypeValue(e.OType), "tpcc_pp")
+			lName = fmt.Sprintf("%s/%s.log", j.rd, widget.GetOTypeValue(e.OType))
+			log.Logger.Infof("[%s] warehouses: 10, threads: 10, database: %s", widget.GetOTypeValue(e.OType), "tpcc_pp")
 			go ld.captureLoaderLog(lName, j.errC, j.ldC)
-			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp clean", tiupRoot, mysql.M.Host, mysql.M.Port)
-			l.run(lName, j.errC)
-			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp --warehouses 20 --threads 10 prepare", tiupRoot, mysql.M.Host, mysql.M.Port)
+			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp clean; %s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp --warehouses %d --threads %d prepare",
+				tiupRoot, mysql.M.Host, mysql.M.Port, tiupRoot, mysql.M.Host, mysql.M.Port, warehouses, threads)
 			l.run(lName, j.errC)
 		}
 		return true
@@ -292,12 +286,17 @@ func dateFormat() string {
 	return fmt.Sprintf("%d-%02d-%02d_%02d:%02d:%02d", year, int(month), day, hour, min, sec)
 }
 
-func (j *job) createOTypeResult() (string, error) {
+func (j *job) createOTypeResult() error {
 	result := fmt.Sprintf("%s/%s_%s", rd, j.list.Title, dateFormat())
 	if err := os.MkdirAll(result, os.ModePerm); err != nil {
-		return "", err
+		return err
 	}
-	return filepath.Abs(result)
+	f, err := filepath.Abs(result)
+	if err != nil {
+		return err
+	}
+	j.rd = f
+	return nil
 }
 
 func resetDB() error {
