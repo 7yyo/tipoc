@@ -8,16 +8,16 @@ import (
 )
 
 type dataCorruptedOperator struct {
-	host        string
-	port        string
-	componentTp string
-	deployPath  string
+	host       string
+	port       string
+	cType      string
+	deployPath string
 }
 
 func (d *dataCorruptedOperator) Execute() error {
 	var dataPath string
 	var err error
-	switch d.componentTp {
+	switch d.cType {
 	case "tikv":
 		dataPath, err = d.getTiKVDataPath()
 	case "pd":

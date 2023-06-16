@@ -6,6 +6,7 @@ import (
 	ui "github.com/gizak/termui/v3"
 	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
+	"os"
 	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/mysql"
@@ -22,16 +23,14 @@ type Server struct {
 
 func New() {
 
-	log.InitLogger(logName)
+	if err := prepare(); err != nil {
+		panic(err)
+	}
 
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
 	defer ui.Close()
-
-	if err := initConfig(); err != nil {
-		panic(err)
-	}
 
 	s := Server{
 		w: &widget.Widget{
@@ -42,15 +41,19 @@ func New() {
 			L: widget.NewLoader(),
 		},
 	}
+	ui.Render(s.w.T, s.w.C, s.w.O, s.w.P, s.w.L)
 
 	go s.captureLog()
 
-	ui.Render(s.w.T, s.w.C, s.w.O, s.w.P, s.w.L)
-
+	previousKey := ""
 	ue := ui.PollEvents()
 	for {
 		e := <-ue
 		switch e.ID {
+		case "g":
+			if previousKey == "g" {
+				s.w.T.ScrollTop()
+			}
 		case "<Up>":
 			s.w.T.ScrollUp()
 		case "<Down>":
@@ -80,6 +83,13 @@ func New() {
 		case "<C-c>":
 			return
 		}
+
+		if previousKey == "g" {
+			previousKey = ""
+		} else {
+			previousKey = e.ID
+		}
+
 		ui.Render(s.w.T, s.w.C, s.w.P)
 	}
 }
@@ -123,14 +133,18 @@ func (s *Server) run() error {
 
 const defaultCfg = "config.toml"
 
-func initConfig() error {
+func prepare() error {
 
 	var cfg string
 	flag.StringVar(&cfg, "c", defaultCfg, "")
 	flag.Parse()
 
+	log.InitLogger(logName)
 	config, err := toml.LoadFile(cfg)
 	if err != nil {
+		return err
+	}
+	if err := checkConfig(config); err != nil {
 		return err
 	}
 
@@ -138,39 +152,62 @@ func initConfig() error {
 		log.Logger.Infof("%s == %s", k, v)
 	}
 
-	mysql.M.Host = config.Get("mysql.host").(string)
-	mysql.M.Port = config.Get("mysql.port").(string)
-	mysql.M.User = config.Get("mysql.user").(string)
-	mysql.M.Password = config.Get("mysql.password").(string)
+	mysql.M.Host = config.Get(mysqlHost).(string)
+	mysql.M.Port = config.Get(mysqlPort).(string)
+	mysql.M.User = config.Get(mysqlUser).(string)
+	mysql.M.Password = config.Get(mysqlPassword).(string)
 
-	comp.PdAddr, err = mysql.M.GetPdAddr()
+	comp.PdAddr, err = comp.GetPdAddr()
 	if err != nil {
 		return err
 	}
 
-	ssh.S.User = config.Get("ssh.user").(string)
-	ssh.S.SshPort = config.Get("ssh.sshPort").(string)
-	ssh.S.Cluster.Name = config.Get("cluster.name").(string)
+	ssh.S.User = config.Get(sshUser).(string)
+	if config.Get(sshPassword) != nil {
+		ssh.S.Password = config.Get(sshPassword).(string)
+	}
+	ssh.S.SshPort = config.Get(sshPort).(string)
+	ssh.S.Cluster.Name = config.Get(clusterName).(string)
+	ssh.S.LogC = make(chan string)
 	if err := ssh.S.CheckClusterName(); err != nil {
 		return err
 	}
-	ssh.S.Cluster.Plugin = config.Get("cluster.plugin").(string)
-	if err := ssh.S.GetSSHKey(); err != nil {
+	if config.Get(plugin) != nil {
+		ssh.S.Cluster.Plugin = config.Get(plugin).(string)
+	}
+	if err := ssh.S.AddSSHKey(); err != nil {
 		return err
 	}
-	ld.cmd = config.Get("load.cmd").(string)
-	ld.interval = config.Get("load.interval").(int64)
-	ld.sleep = time.Duration(config.Get("load.sleep").(int64))
+	go ssh.S.CommandListener()
 
-	logLevel := config.Get("log.level").(string)
-	switch logLevel {
-	case "debug":
-		log.Logger.SetLevel(logrus.DebugLevel)
+	if config.Get(loadCmd) != nil {
+		ld.cmd = config.Get(loadCmd).(string)
+	}
+	if config.Get(loadInterval) != nil {
+		ld.interval = config.Get(loadInterval).(int64)
+	}
+	if config.Get(loadSleep) != nil {
+		ld.sleep = time.Duration(config.Get(loadSleep).(int64))
 	}
 
-	widget.OtherConfig = config.Get("other.dir").(string)
+	if config.Get(logLevel) != nil {
+		logLevel := config.Get(logLevel).(string)
+		switch logLevel {
+		case "debug":
+			log.Logger.SetLevel(logrus.DebugLevel)
+		}
+	}
+
+	if config.Get(widget.OtherConfig) != nil {
+		widget.OtherConfig = config.Get(otherDir).(string)
+	}
+	if err := os.MkdirAll(rd, os.ModePerm); err != nil {
+		return err
+	}
 	return nil
 }
+
+const logHeader = 50
 
 func (s *Server) captureLog() {
 	t, err := log.Track(logName)
@@ -179,6 +216,9 @@ func (s *Server) captureLog() {
 	}
 	for l := range t.Lines {
 		s.w.O.Rows = append(s.w.O.Rows, l.Text)
+		if len(s.w.O.Rows) > logHeader {
+			s.w.O.Rows = s.w.O.Rows[1:]
+		}
 		s.w.O.ScrollBottom()
 		ui.Render(s.w.O)
 	}

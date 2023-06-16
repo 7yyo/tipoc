@@ -113,6 +113,8 @@ func walkTree(tree *widgets.Tree) {
 			} else {
 				if isSafety(v) {
 					node.Value = NewExample(v, -1, SafetyScript)
+				} else if isLoadData(v) {
+					node.Value = NewExample(v, -1, LoadDataTPCC)
 				} else {
 					node.Value = NewExample(v, -1, Script)
 				}

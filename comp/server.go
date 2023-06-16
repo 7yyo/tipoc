@@ -21,7 +21,7 @@ type ServersInfo struct {
 }
 
 func (m *Mapping) GetServer() error {
-	host, statusPort, err := mysql.M.GetTiDBHostStatusPort()
+	host, statusPort, err := GetTiDBHostStatusPort()
 	if err != nil {
 		return err
 	}
@@ -45,4 +45,18 @@ func (m *Mapping) GetServer() error {
 	}
 	m.Map[TiDB] = cs
 	return nil
+}
+
+func GetTiDBHostStatusPort() (string, string, error) {
+	rs, err := mysql.M.ExecuteSQL("SELECT * FROM information_schema.tidb_servers_info")
+	if err != nil {
+		return "", "", err
+	}
+	defer rs.Close()
+	if rs == nil {
+		return "", "", fmt.Errorf("please confirm that the [tidb] exists in the cluster")
+	}
+	host := string(rs.Values[0][1].AsString())
+	statusPort := strconv.FormatInt(rs.Values[0][3].AsInt64(), 10)
+	return host, statusPort, nil
 }

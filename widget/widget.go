@@ -103,7 +103,7 @@ func NewProcessBar() *widgets.Gauge {
 	p := widgets.NewGauge()
 	p.Title = ProcessBar
 	p.Percent = 0
-	p.SetRect(0, int(float64(y)*0.94), 2*x/3, y-1)
+	p.SetRect(0, int(float64(y)*0.93), 2*x/3, y-1)
 	p.BarColor = ui.ColorGreen
 	p.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	p.TitleStyle = ui.NewStyle(ui.ColorClear)
@@ -173,8 +173,9 @@ func (w *Widget) WalkTreeScript() (map[string][]string, error) {
 			case Script, SafetyScript, OtherScript:
 				value, err := example.getScriptValue()
 				if err != nil {
-					log.Logger.Error(err)
-					return false
+					log.Logger.Warn(err)
+					removeTreeNode(w.C, node.Value.String())
+					return true
 				}
 				examples[example.Value] = value
 			}

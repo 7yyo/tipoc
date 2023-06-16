@@ -15,7 +15,7 @@ var Logger = logrus.New()
 
 func InitLogger(name string) {
 	if err := os.Remove(name); err != nil {
-		if !os.IsNotExist(err) {
+		if os.IsExist(err) {
 			panic(err)
 		}
 	}

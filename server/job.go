@@ -10,6 +10,7 @@ import (
 	"pictorial/log"
 	"pictorial/mysql"
 	"pictorial/operator"
+	"pictorial/ssh"
 	"pictorial/widget"
 	"strings"
 	"sync"
@@ -31,7 +32,7 @@ type channel struct {
 	completeC chan bool
 }
 
-const rd = "result"
+const rd = "./result"
 
 func newJob(e map[string][]string, s *widgets.Tree, cs map[comp.CType][]comp.Component) job {
 	return job{
@@ -58,8 +59,13 @@ func (j *job) run() {
 		j.runLabel()
 	case widget.SafetyScript:
 		j.runSafety()
+	case widget.LoadDataTPCC:
+		j.runLoadData()
 	default:
 		j.runComponent()
+	}
+	if err := ssh.CleanShellLog(); err != nil {
+		j.errC <- err
 	}
 	log.Logger.Infof("complete at %s", rd)
 	j.completeC <- true
@@ -70,7 +76,7 @@ func isCompleteSignal(err error) bool {
 }
 
 func (j *job) runScript() {
-	if err := mysql.M.ResetDB(); err != nil {
+	if err := resetDB(); err != nil {
 		j.errC <- err
 	}
 	log.Logger.Info("start job, reset DB complete.")
@@ -104,13 +110,13 @@ func (j *job) runScript() {
 }
 
 func (j *job) runComponent() {
-	result, err := j.createOTypeResult()
+	oTypeResult, err := j.createOTypeResult()
 	if err != nil {
 		j.errC <- err
 		return
 	}
 	if ld.cmd != "" {
-		ldName := filepath.Join(result, "loader.log")
+		ldName := filepath.Join(oTypeResult, "loader.log")
 		go ld.run(ldName, j.channel.errC)
 		go ld.captureLoaderLog(ldName, j.errC, j.ldC)
 		time.Sleep(time.Second * 1)
@@ -121,11 +127,12 @@ func (j *job) runComponent() {
 		cnt++
 		j.barC <- cnt
 		e := widget.ChangeToExample(i)
-		addr := strings.Replace(e.String(), "(L)", "", -1)
+		addr := strings.Trim(e.String(), comp.Leader)
 		o := i.Value.(*widget.Example).OType
 		oType := widget.GetOTypeValue(o)
 		var failMsg = "[%s] %s failed: %v"
 		for _, c := range j.components[e.CType] {
+			c.Port = strings.Trim(c.Port, comp.Leader)
 			if addr == net.JoinHostPort(c.Host, c.Port) {
 				b := operator.Builder{
 					OType:      oType,
@@ -145,26 +152,27 @@ func (j *job) runComponent() {
 				}
 			}
 		}
-		time.Sleep(time.Second * time.Duration(ld.sleep))
+		time.Sleep(time.Second * ld.sleep)
 		return true
 	})
-	if ld.cmd != "" {
-		cntDown("render", ld.interval)
-		if err := j.components[comp.Grafana][0].Render(result); err != nil {
-			j.errC <- err
-			return
-		}
+	cntDown("render", ld.interval)
+	if err := j.components[comp.Grafana][0].Render(oTypeResult); err != nil {
+		j.errC <- err
+		return
+	}
+	if _, err := ssh.S.Transfer(ssh.ShellLog, oTypeResult); err != nil {
+		j.errC <- err
 	}
 }
 
 func (j *job) runLabel() {
-	result, err := j.createOTypeResult()
+	oTypeResult, err := j.createOTypeResult()
 	if err != nil {
 		j.errC <- err
 		return
 	}
 	if ld.cmd != "" {
-		ldName := filepath.Join(result, "loader.log")
+		ldName := filepath.Join(oTypeResult, "loader.log")
 		go ld.run(ldName, j.channel.errC)
 		go ld.captureLoaderLog(ldName, j.errC, j.ldC)
 		time.Sleep(time.Second * 1)
@@ -193,13 +201,37 @@ func (j *job) runLabel() {
 		log.Logger.Infof("[disaster] %s", targetLabel)
 		return true
 	})
-	if ld.cmd != "" {
-		cntDown("render", ld.interval)
-		if err := j.components[comp.Grafana][0].Render(result); err != nil {
-			j.errC <- err
-			return
-		}
+	cntDown("render", ld.interval)
+	if err := j.components[comp.Grafana][0].Render(oTypeResult); err != nil {
+		j.errC <- err
+		return
 	}
+	if _, err := ssh.S.Transfer(ssh.ShellLog, oTypeResult); err != nil {
+		j.errC <- err
+	}
+}
+
+func (j *job) runLoadData() {
+	j.list.Walk(func(node *widgets.TreeNode) bool {
+		e := widget.ChangeToExample(node)
+		var l load
+		var lName string
+		switch e.OType {
+		case widget.LoadDataTPCC:
+			tiupRoot, err := ssh.S.WhichTiup()
+			if err != nil {
+				j.errC <- err
+			}
+			lName = fmt.Sprintf("%s.log", widget.GetOTypeValue(e.OType))
+			log.Logger.Infof("[%s] warehouses: 20, threads: 10, database: %s", widget.GetOTypeValue(e.OType), "tpcc_pp")
+			go ld.captureLoaderLog(lName, j.errC, j.ldC)
+			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp clean", tiupRoot, mysql.M.Host, mysql.M.Port)
+			l.run(lName, j.errC)
+			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp --warehouses 20 --threads 10 prepare", tiupRoot, mysql.M.Host, mysql.M.Port)
+			l.run(lName, j.errC)
+		}
+		return true
+	})
 }
 
 const rootUser = "## root"
@@ -208,7 +240,7 @@ const tidbUserName = "tidb_user"
 const tidbUserPassword = "tidb_password"
 
 func (j *job) runSafety() {
-	if err := mysql.M.ResetDB(); err != nil {
+	if err := resetDB(); err != nil {
 		j.errC <- err
 		return
 	}
@@ -266,4 +298,17 @@ func (j *job) createOTypeResult() (string, error) {
 		return "", err
 	}
 	return filepath.Abs(result)
+}
+
+func resetDB() error {
+	if _, err := mysql.M.ExecuteSQL("DROP DATABASE IF EXISTS poc"); err != nil {
+		return err
+	}
+	if _, err := mysql.M.ExecuteSQL("CREATE DATABASE poc"); err != nil {
+		return err
+	}
+	if _, err := mysql.M.ExecuteSQL("SET GLOBAL validate_password.enable = OFF;"); err != nil {
+		return err
+	}
+	return nil
 }

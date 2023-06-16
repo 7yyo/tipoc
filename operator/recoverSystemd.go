@@ -4,29 +4,33 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/ssh"
-	"strings"
 )
 
 type recoverSystemdOperator struct {
-	host        string
-	port        string
-	componentTp string
+	host       string
+	port       string
+	cType      string
+	deployPath string
 }
 
 const noToAlways = "sudo sed -i 's/no/always/g' %s"
 
 func (r *recoverSystemdOperator) Execute() error {
 	var systemd string
-	nodeTp := strings.Replace(r.componentTp, "(L)", "", -1)
+	nodeTp := comp.CleanLeaderFlag(r.cType)
+	if r.cType == "tiflash" {
+		port, err := comp.GetTiFlashPort(r.host, r.deployPath)
+		if err != nil {
+			return err
+		}
+		r.port = port
+	}
 	systemd = fmt.Sprintf(service, nodeTp, r.port)
 	service := filepath.Join(systemdPath, systemd)
-	cmd := fmt.Sprintf(noToAlways, service)
-	if _, err := ssh.S.RunSSH(r.host, cmd); err != nil {
-		return err
-	}
-	if _, err := ssh.S.RunSSH(r.host, reloadSystemd); err != nil {
+	if _, err := ssh.S.Systemd(r.host, ssh.Always, service); err != nil {
 		return err
 	}
 	addr := net.JoinHostPort(r.host, r.port)

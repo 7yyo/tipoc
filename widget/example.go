@@ -32,6 +32,7 @@ const (
 	RecoverSystemd
 	Disaster
 	Reboot
+	LoadDataTPCC
 )
 
 func GetOTypeValue(o OType) string {
@@ -56,6 +57,8 @@ func GetOTypeValue(o OType) string {
 		return "disaster"
 	case Reboot:
 		return "reboot"
+	case LoadDataTPCC:
+		return "load_data_tpc-c"
 	default:
 		return ""
 	}
@@ -98,24 +101,50 @@ func ChangeToExample(node *widgets.TreeNode) *Example {
 const fragment = "## -"
 
 func (e Example) getScriptValue() ([]string, error) {
+	fName := e.scriptPath()
+	v, err := e.scriptValue(fName)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(v, fragment), nil
+}
+
+func (e Example) scriptPath() string {
+	switch e.OType {
+	case Script, SafetyScript:
+		return fmt.Sprintf("script/%s%s", e.Value, ".sql")
+	case OtherScript:
+		return filepath.Join(OtherConfig, e.Value)
+	default:
+		return ""
+	}
+}
+
+func (e Example) scriptValue(fName string) (string, error) {
 	var v string
 	switch e.OType {
 	case Script, SafetyScript:
-		fname := fmt.Sprintf("script/%s%s", e.Value, ".sql")
-		output, err := scriptPath.ReadFile(fname)
+		output, err := scriptPath.ReadFile(fName)
 		if err != nil {
-			return nil, err
+			return "", e.scriptIsNotExists()
 		}
-		tableName := strings.Split(e.Value, " ")[1]
-		full := fmt.Sprintf("%s.%s", "poc", tableName)
-		v = strings.ReplaceAll(string(output), "${TABLE_NAME}", full)
+		v = e.replaceTableName(output)
 	case OtherScript:
-		fname := filepath.Join(OtherConfig, e.Value)
-		output, err := ioutil.ReadFile(fname)
+		output, err := ioutil.ReadFile(fName)
 		if err != nil {
-			return nil, err
+			return "", e.scriptIsNotExists()
 		}
 		v = string(output)
 	}
-	return strings.Split(v, fragment), nil
+	return v, nil
+}
+
+func (e Example) scriptIsNotExists() error {
+	return fmt.Errorf("[%s] is not exists, skip", e.Value)
+}
+
+func (e Example) replaceTableName(o []byte) string {
+	tableName := strings.Split(e.Value, " ")[1]
+	tableName = fmt.Sprintf("%s.%s", "poc", tableName)
+	return strings.ReplaceAll(string(o), "${TABLE_NAME}", tableName)
 }

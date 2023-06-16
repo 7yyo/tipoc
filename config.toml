@@ -13,12 +13,13 @@ password = ""
 
 [ssh]
 user = "tidb"
+password = "tidb"
 sshPort = "22"
 
 [load]
 cmd = ""
 interval = 0
-sleep = 10
+sleep = 2
 
 [other]
 dir = "/Users/yuyang/go/src/pictorial/other"

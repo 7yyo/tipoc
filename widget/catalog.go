@@ -27,3 +27,7 @@ func newCatalog(v string) *Catalog {
 func isSafety(v string) bool {
 	return strings.HasPrefix(v, "6")
 }
+
+func isLoadData(v string) bool {
+	return strings.HasPrefix(v, "8")
+}

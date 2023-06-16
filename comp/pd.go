@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net"
 	"pictorial/http"
+	"pictorial/log"
+	"pictorial/mysql"
+	"strings"
 )
 
 type PlacementDriver struct {
@@ -32,6 +35,9 @@ func (m *Mapping) GetPD() error {
 		if err != nil {
 			return err
 		}
+		if p.ClientURLs[0] == pd.Leader.ClientURLs[0] {
+			port = fmt.Sprintf("%s%s", port, Leader)
+		}
 		c := Component{
 			Host:       host,
 			Port:       port,
@@ -40,4 +46,22 @@ func (m *Mapping) GetPD() error {
 		m.Map[PD] = append(m.Map[PD], c)
 	}
 	return nil
+}
+
+func GetPdAddr() (string, error) {
+	rs, err := mysql.M.ExecuteSQL("SELECT * FROM information_schema.cluster_info WHERE type = 'pd'")
+	if err != nil {
+		return "", err
+	}
+	defer rs.Close()
+	if rs == nil {
+		return "", fmt.Errorf("please confirm that the [pd] exists in the cluster")
+	}
+	pd := string(rs.Values[0][1].AsString())
+	log.Logger.Debug("pd = %s", pd)
+	return pd, nil
+}
+
+func CleanLeaderFlag(v string) string {
+	return strings.Trim(v, "(L)")
 }

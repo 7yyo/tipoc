@@ -55,17 +55,19 @@ func (b *Builder) BuildKill() (Operator, error) {
 
 func (b *Builder) BuildCrash() (Operator, error) {
 	return &crashOperator{
-		host:        b.Host,
-		port:        b.Port,
-		componentTp: b.CType,
+		host:       b.Host,
+		port:       b.Port,
+		cType:      b.CType,
+		deployPath: b.DeployPath,
 	}, nil
 }
 
 func (b *Builder) BuildRecoverSystemd() (Operator, error) {
 	return &recoverSystemdOperator{
-		host:        b.Host,
-		port:        b.Port,
-		componentTp: b.CType,
+		host:       b.Host,
+		port:       b.Port,
+		cType:      b.CType,
+		deployPath: b.DeployPath,
 	}, nil
 }
 
@@ -79,10 +81,10 @@ func (b *Builder) BuildScaleIn() (Operator, error) {
 
 func (b *Builder) BuildDataCorrupted() (Operator, error) {
 	return &dataCorruptedOperator{
-		host:        b.Host,
-		port:        b.Port,
-		componentTp: b.CType,
-		deployPath:  b.DeployPath,
+		host:       b.Host,
+		port:       b.Port,
+		cType:      b.CType,
+		deployPath: b.DeployPath,
 	}, nil
 }
 

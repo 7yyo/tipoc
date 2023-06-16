@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"pictorial/log"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -52,19 +51,6 @@ func (m *MySQL) args(sql string) []string {
 	return args
 }
 
-func (m *MySQL) ResetDB() error {
-	if _, err := m.ExecuteSQL("DROP DATABASE IF EXISTS poc"); err != nil {
-		return err
-	}
-	if _, err := m.ExecuteSQL("CREATE DATABASE poc"); err != nil {
-		return err
-	}
-	if _, err := m.ExecuteSQL("SET GLOBAL validate_password.enable = OFF;"); err != nil {
-		return err
-	}
-	return nil
-}
-
 const resultFile = "%s_%d.result"
 
 func (m *MySQL) ExecuteAndWrite(s, rd, name string, idx int32) error {
@@ -76,8 +62,8 @@ func (m *MySQL) ExecuteAndWrite(s, rd, name string, idx int32) error {
 	err := cmd.Run()
 	fName := filepath.Join(rd, fmt.Sprintf(resultFile, name, idx))
 	f, _ := os.Create(fName)
-	resultOutput := updateResultOutput(stdout.String())
-	errOutput := updateErrOutput(stderr.String())
+	resultOutput := rewriteResultOutput(stdout.String())
+	errOutput := rewriteErrOutput(stderr.String())
 	_, _ = io.WriteString(f, resultOutput)
 	_, _ = io.WriteString(f, errOutput)
 	if stderr.String() != "" && stderr.String() != SqlWarn {
@@ -107,11 +93,10 @@ func (m *MySQL) ExecuteUserAndWrite(s, fName, user, password string) error {
 	cmd := exec.Command("mysql", cmdArgs...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	log.Logger.Debug(cmd)
 	err := cmd.Run()
 	f, _ := os.Create(fName)
-	resultOutput := updateResultOutput(stdout.String())
-	errOutput := updateErrOutput(stderr.String())
+	resultOutput := rewriteResultOutput(stdout.String())
+	errOutput := rewriteErrOutput(stderr.String())
 	_, _ = io.WriteString(f, resultOutput)
 	_, _ = io.WriteString(f, errOutput)
 	if stderr.String() != "" && stderr.String() != SqlWarn {
@@ -158,7 +143,7 @@ const sleep = "SELECT SLEEP"
 const sleepHeight = 9
 const bingo = 2
 
-func updateResultOutput(s string) string {
+func rewriteResultOutput(s string) string {
 	lines := strings.Split(s, "\n")
 	var cnt int
 	var first bool
@@ -212,7 +197,7 @@ func updateResultOutput(s string) string {
 	return out.String()
 }
 
-func updateErrOutput(s string) string {
+func rewriteErrOutput(s string) string {
 	ss := strings.Split(s, "\n")
 	var r strings.Builder
 	for _, s := range ss {
@@ -221,32 +206,4 @@ func updateErrOutput(s string) string {
 		}
 	}
 	return r.String()
-}
-
-func (m *MySQL) GetPdAddr() (string, error) {
-	rs, err := m.ExecuteSQL("SELECT * FROM information_schema.cluster_info WHERE type = 'pd'")
-	if err != nil {
-		return "", err
-	}
-	defer rs.Close()
-	if rs == nil {
-		return "", fmt.Errorf("please confirm that the [pd] exists in the cluster")
-	}
-	pd := string(rs.Values[0][1].AsString())
-	log.Logger.Debug("pd = %s", pd)
-	return pd, nil
-}
-
-func (m *MySQL) GetTiDBHostStatusPort() (string, string, error) {
-	rs, err := m.ExecuteSQL("SELECT * FROM information_schema.tidb_servers_info")
-	if err != nil {
-		return "", "", err
-	}
-	defer rs.Close()
-	if rs == nil {
-		return "", "", fmt.Errorf("please confirm that the [tidb] exists in the cluster")
-	}
-	host := string(rs.Values[0][1].AsString())
-	statusPort := strconv.FormatInt(rs.Values[0][3].AsInt64(), 10)
-	return host, statusPort, nil
 }

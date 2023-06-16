@@ -1,12 +1,8 @@
 package server
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"pictorial/log"
+	"pictorial/ssh"
 	"time"
 )
 
@@ -19,18 +15,9 @@ type load struct {
 var ld load
 
 func (l *load) run(lgName string, errC chan error) {
-	lf, err := os.Create(lgName)
-	if err != nil {
+	args := []string{"-c", l.cmd}
+	if _, err := ssh.S.RunLocalWithWrite("sh", args, lgName); err != nil {
 		errC <- err
-	}
-	defer lf.Close()
-	log.Logger.Info(l.cmd)
-	cmd := exec.Command("sh", "-c", l.cmd)
-	cmd.Stdout = io.MultiWriter(lf)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err = cmd.Run(); err != nil {
-		errC <- fmt.Errorf("[load] failed: %v: %s", err, stderr.String())
 	}
 }
 

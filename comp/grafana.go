@@ -1,13 +1,14 @@
 package comp
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"path/filepath"
 	"pictorial/etcd"
 	"pictorial/http"
 	"pictorial/log"
-	"pictorial/panel"
 	"pictorial/ssh"
 	"strconv"
 	"time"
@@ -68,7 +69,6 @@ func (c *Component) preCheck() error {
 	if _, err = s.Restart("grafana"); err != nil {
 		return err
 	}
-
 	if err := c.dependencies(); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (c *Component) Render(to string) error {
 		return err
 	}
 	now, from := unixDuration()
-	pls, err := panel.GetPanels()
+	pls, err := GetPanels()
 	log.Logger.Infof("[render] count: %d", len(pls))
 	if err != nil {
 		return err
@@ -93,6 +93,9 @@ func (c *Component) Render(to string) error {
 	uri := "http://%s:%s/render/d-solo/%s/%s-%s?orgId=1&from=%s&to=%s&panelId=%s&width=1000&height=500&scale=3"
 	source := filepath.Join(c.DeployPath, "data", "png", "*")
 	dataPath := filepath.Join(c.DeployPath, "data", "png")
+	if _, err := s.Remove(c.Host, source); err != nil {
+		return err
+	}
 	time.Sleep(3 * time.Second)
 	for _, p := range pls {
 		cmd := fmt.Sprintf(uri, c.Host, c.Port, p.Org, s.Cluster.Name, p.Tab, from, now, p.ID) + "&tz=Asia%2FShanghai"
@@ -108,10 +111,12 @@ func (c *Component) Render(to string) error {
 			return err
 		}
 		if len(out) == 0 {
-			log.Logger.Warnf("render failed, 'grep 'eror' %s/log/grafana.log', skip: %s", p.Name, c.DeployPath)
-			continue
+			return fmt.Errorf("render failed, 'grep 'eror' %s/log/grafana.log', skip: %s", p.Name, c.DeployPath)
 		}
 		sourcePath := fmt.Sprintf("%s@%s:%s", s.User, c.Host, source)
+		if _, err = s.Mv(c.Host, source+".png", filepath.Join(dataPath, fmt.Sprintf("%s.png", p.Name))); err != nil {
+			return err
+		}
 		if _, err = s.Transfer(sourcePath, to); err != nil {
 			return err
 		}
@@ -208,7 +213,6 @@ func timeFormat(t time.Time) string {
 func printPlugins(o string) {
 	log.Logger.Info("maybe plugins installed:")
 	log.Logger.Info(o)
-	log.Logger.Info("have a try now, good luck!")
 }
 
 func dateFormat() string {
@@ -226,11 +230,33 @@ var dependencies = [2]string{
 func (c *Component) dependencies() error {
 	log.Logger.Infof("check for dependencies %v, maybe take a while...", dependencies)
 	for _, d := range dependencies {
-		o, err := ssh.S.RunSSH(c.Host, fmt.Sprintf("sudo yum install -y %s", d))
-		if err != nil {
-			return err
+		if _, err := ssh.S.RunSSH(c.Host, fmt.Sprintf("sudo yum install -y %s", d)); err != nil {
+			log.Logger.Warn(err)
 		}
-		log.Logger.Info(string(o))
 	}
 	return nil
+}
+
+//go:embed "panel.yaml"
+var panelPath embed.FS
+
+const panelYaml = "panel.yaml"
+
+type panel struct {
+	ID   string
+	Tab  string
+	Name string
+	Org  string
+}
+
+func GetPanels() (map[string]panel, error) {
+	p, err := panelPath.ReadFile(panelYaml)
+	if err != nil {
+		return nil, err
+	}
+	pls := make(map[string]panel)
+	if err = yaml.Unmarshal(p, &pls); err != nil {
+		return nil, err
+	}
+	return pls, nil
 }

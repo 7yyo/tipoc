@@ -1,7 +1,6 @@
 package operator
 
 import (
-	"fmt"
 	"net"
 	"pictorial/log"
 	"pictorial/ssh"
@@ -15,8 +14,7 @@ type scaleInOperator struct {
 
 func (s *scaleInOperator) Execute() error {
 	addr := net.JoinHostPort(s.host, s.port)
-	c := fmt.Sprintf("tiup cluster scale-in %s -N %s --yes", s.clusterName, addr)
-	if _, err := ssh.RunLocal(c); err != nil {
+	if _, err := ssh.S.ScaleIn(addr); err != nil {
 		return err
 	}
 	log.Logger.Infof("[scale_in] %s", addr)

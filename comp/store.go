@@ -53,11 +53,6 @@ func (m *Mapping) GetStore() error {
 			}
 		}
 		if isTiFlash {
-			port, err := getTiFlashPort(c.Host, c.DeployPath)
-			if err != nil {
-				return err
-			}
-			c.Port = port
 			m.Map[TiFlash] = append(m.Map[TiFlash], c)
 		} else {
 			m.Map[TiKV] = append(m.Map[TiKV], c)
@@ -66,7 +61,7 @@ func (m *Mapping) GetStore() error {
 	return nil
 }
 
-func getTiFlashPort(host, deployPath string) (string, error) {
+func GetTiFlashPort(host, deployPath string) (string, error) {
 	tiflashConfigPath := strings.Replace(deployPath, "bin/tiflash", "conf/tiflash.toml", -1)
 	port, err := ssh.S.RunSSH(host, fmt.Sprintf("grep tcp_port %s | awk -F '= ' '{print $2}'", tiflashConfigPath))
 	if err != nil {

@@ -1,13 +1,16 @@
 package comp
 
+import "strings"
+
 var PdAddr string
 
-const topologyTiDB = "/topology/tidb/"
 const topologyGrafana = "/topology/grafana"
 
 const membersUrl = "http://%s/pd/api/v1/members"
 const storeUrl = "http://%s/pd/api/v1/stores"
 const tidbAllInfoUrl = "http://%s/info/all"
+
+const Leader = "(L)"
 
 type CType int
 
@@ -69,4 +72,8 @@ func GetCTypeValue(c CType) string {
 
 func (m *Mapping) GetComponent(c CType) []Component {
 	return m.Map[c]
+}
+
+func IsLeader(v string) bool {
+	return strings.Contains(v, Leader)
 }

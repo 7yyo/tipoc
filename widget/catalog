@@ -70,6 +70,7 @@
         1.12.3 expression_index
         1.12.4 invisible_index
         1.12.5 secondary_index
+        1.12.6 multi_value_index
     1.13 cache_table
     1.14 temporary_table
         1.14.1 local_temporary_table
@@ -129,3 +130,5 @@
     7.4 crash
     7.5 disaster
     7.6 reboot
+8 data_load
+    8.1 tpc-c
