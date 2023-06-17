@@ -84,7 +84,6 @@ func New() {
 		case "<C-c>":
 			return
 		}
-
 		if previousKey == "g" || previousKey == "a" {
 			previousKey = ""
 		} else {
@@ -122,9 +121,7 @@ func (s *Server) run() error {
 		case idx := <-j.barC:
 			s.w.RefreshProcessBar(idx)
 		case ldText := <-j.ldC:
-			s.w.L.Rows = append(s.w.L.Rows, ldText)
-			s.w.L.ScrollDown()
-			ui.Render(s.w.L)
+			s.w.AutoScrollDownLoad(ldText)
 		case <-j.completeC:
 			widget.CleanTree(s.w.C)
 			return fmt.Errorf(completeSignal)
@@ -199,19 +196,12 @@ func prepare() error {
 	return nil
 }
 
-const logHeader = 50
-
 func (s *Server) captureLog() {
 	t, err := log.Track(logName)
 	if err != nil {
 		panic(err)
 	}
 	for l := range t.Lines {
-		s.w.O.Rows = append(s.w.O.Rows, l.Text)
-		if len(s.w.O.Rows) > logHeader {
-			s.w.O.Rows = s.w.O.Rows[1:]
-		}
-		s.w.O.ScrollBottom()
-		ui.Render(s.w.O)
+		s.w.AutoScrollDownOutput(l.Text)
 	}
 }

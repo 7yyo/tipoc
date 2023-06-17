@@ -36,7 +36,7 @@ type channel struct {
 const rd = "./result"
 
 func newJob(e map[string][]string, s *widgets.Tree, cs map[comp.CType][]comp.Component) job {
-	if err := os.Mkdir(rd, os.ModePerm); err != nil {
+	if err := os.MkdirAll(rd, os.ModePerm); err != nil {
 		panic(err)
 	}
 	return job{
@@ -141,12 +141,12 @@ func (j *job) runScript() {
 
 func (j *job) runComponent() {
 	var cnt int
-	j.list.Walk(func(i *widgets.TreeNode) bool {
+	j.list.Walk(func(node *widgets.TreeNode) bool {
 		cnt++
 		j.barC <- cnt
-		e := widget.ChangeToExample(i)
+		e := widget.ChangeToExample(node)
 		addr := strings.Trim(e.String(), comp.Leader)
-		o := i.Value.(*widget.Example).OType
+		o := node.Value.(*widget.Example).OType
 		oType := widget.GetOTypeValue(o)
 		var failMsg = "[%s] %s failed: %v"
 		for _, c := range j.components[e.CType] {
@@ -279,15 +279,8 @@ func (j *job) runSafety() {
 
 }
 
-func dateFormat() string {
-	now := time.Now()
-	year, month, day := now.Date()
-	hour, min, sec := now.Clock()
-	return fmt.Sprintf("%d-%02d-%02d_%02d:%02d:%02d", year, int(month), day, hour, min, sec)
-}
-
 func (j *job) createOTypeResult() error {
-	result := fmt.Sprintf("%s/%s_%s", rd, j.list.Title, dateFormat())
+	result := fmt.Sprintf("%s/%s_%s", rd, j.list.Title, log.DateFormat())
 	if err := os.MkdirAll(result, os.ModePerm); err != nil {
 		return err
 	}

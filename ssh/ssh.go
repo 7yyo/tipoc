@@ -14,7 +14,6 @@ import (
 	"pictorial/log"
 	"runtime"
 	"strings"
-	"time"
 )
 
 type SSH struct {
@@ -315,27 +314,16 @@ func (s *SSH) CommandListener() {
 	}
 }
 
-func CleanShellLog() error {
-	return os.Remove(ShellLog)
-}
-
 func formatCommand(c string) string {
-	return fmt.Sprintf("[%s] [localhost] %s\n", dateFormat(), c)
+	return fmt.Sprintf("[%s] [localhost] %s\n", log.DateFormat(), c)
 }
 
 func formatStdout(stdout bytes.Buffer) string {
 	out := strings.ReplaceAll(stdout.String(), "\n", "")
-	return fmt.Sprintf("[%s] [stdout] %s\n", dateFormat(), out)
+	return fmt.Sprintf("[%s] [stdout] %s\n", log.DateFormat(), out)
 }
 
 func formatStderr(stderr bytes.Buffer) string {
 	err := strings.ReplaceAll(stderr.String(), "\n", "")
-	return fmt.Sprintf("[%s] [stderr] %s\n", dateFormat(), err)
-}
-
-func dateFormat() string {
-	now := time.Now()
-	year, month, day := now.Date()
-	hour, min, sec := now.Clock()
-	return fmt.Sprintf("%d-%02d-%02d_%02d:%02d:%02d", year, int(month), day, hour, min, sec)
+	return fmt.Sprintf("[%s] [stderr] %s\n", log.DateFormat(), err)
 }

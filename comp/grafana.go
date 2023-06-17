@@ -137,7 +137,7 @@ type token struct {
 
 func (c *Component) newToken() (*token, error) {
 	url := fmt.Sprintf("http://%s:%s/api/auth/keys", c.Host, c.Port)
-	payload := fmt.Sprintf(`{"name":"%s", "role":"Admin"}`, dateFormat())
+	payload := fmt.Sprintf(`{"name":"%s", "role":"Admin"}`, log.DateFormat())
 	auth := http.Auth{
 		Username: "admin",
 		Password: "admin",
@@ -213,13 +213,6 @@ func timeFormat(t time.Time) string {
 func printPlugins(o string) {
 	log.Logger.Info("maybe plugins installed:")
 	log.Logger.Info(o)
-}
-
-func dateFormat() string {
-	now := time.Now()
-	year, month, day := now.Date()
-	hour, min, sec := now.Clock()
-	return fmt.Sprintf("%d-%02d-%02d_%02d:%02d:%02d", year, int(month), day, hour, min, sec)
 }
 
 var dependencies = [2]string{

@@ -66,11 +66,7 @@ func NewOutput() *widgets.List {
 	o.TitleStyle = ui.NewStyle(ui.ColorClear)
 	o.SetRect(0, int(float64(y)*0.93), 2*x/3, int((float64(y)/10)*5))
 	o.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
-	o.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorGreen,
-		Bg:       ui.ColorClear,
-		Modifier: ui.ModifierBold,
-	}
+	o.SelectedRowStyle = ui.NewStyle(ui.ColorClear)
 	o.TextStyle = ui.Style{
 		Fg: ui.ColorClear,
 		Bg: ui.ColorClear,
@@ -86,11 +82,7 @@ func NewLoader() *widgets.List {
 	l.TitleStyle = ui.NewStyle(ui.ColorClear)
 	l.SetRect(2*x/3, 0, x, y-1)
 	l.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
-	l.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorGreen,
-		Bg:       ui.ColorClear,
-		Modifier: ui.ModifierBold,
-	}
+	l.SelectedRowStyle = ui.NewStyle(ui.ColorClear)
 	l.TextStyle = ui.Style{
 		Fg: ui.ColorClear,
 		Bg: ui.ColorClear,
@@ -205,4 +197,36 @@ func (w *Widget) AppendAllScripts() {
 	})
 	w.C.SetNodes(c)
 	w.T.CollapseAll()
+}
+
+func (w *Widget) AutoScrollDownOutput(s string) {
+	x := w.O.Size().X
+	text := splitByNChars(s, x-2)
+	for _, t := range text {
+		w.O.Rows = append(w.O.Rows, t)
+		w.O.ScrollDown()
+	}
+	ui.Render(w.O)
+}
+
+func (w *Widget) AutoScrollDownLoad(s string) {
+	x := w.L.Size().X
+	text := splitByNChars(s, x-2)
+	for _, t := range text {
+		w.L.Rows = append(w.L.Rows, t)
+		w.L.ScrollDown()
+	}
+	ui.Render(w.L)
+}
+
+func splitByNChars(s string, n int) []string {
+	var result []string
+	for i := 0; i < len(s); i += n {
+		end := i + n
+		if end > len(s) {
+			end = len(s)
+		}
+		result = append(result, s[i:end])
+	}
+	return result
 }

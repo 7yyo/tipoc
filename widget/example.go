@@ -86,7 +86,7 @@ func NewExample(v string, c comp.CType, o OType) *Example {
 	}
 }
 
-func getIdxByName(v string) string {
+func getIdxByValue(v string) string {
 	return strings.Split(v, " ")[0]
 }
 

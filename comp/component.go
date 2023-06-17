@@ -1,7 +1,5 @@
 package comp
 
-import "strings"
-
 var PdAddr string
 
 const topologyGrafana = "/topology/grafana"
@@ -15,7 +13,8 @@ const Leader = "(L)"
 type CType int
 
 const (
-	TiDB CType = iota
+	NoBody CType = iota
+	TiDB
 	PD
 	TiKV
 	TiFlash
@@ -72,8 +71,4 @@ func GetCTypeValue(c CType) string {
 
 func (m *Mapping) GetComponent(c CType) []Component {
 	return m.Map[c]
-}
-
-func IsLeader(v string) bool {
-	return strings.Contains(v, Leader)
 }

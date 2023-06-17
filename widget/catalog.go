@@ -2,6 +2,7 @@ package widget
 
 import (
 	"embed"
+	"io/fs"
 	"strings"
 )
 
@@ -22,6 +23,10 @@ func newCatalog(v string) *Catalog {
 	return &Catalog{
 		Value: v,
 	}
+}
+
+func readCatalog() (fs.File, error) {
+	return catalogPath.Open(catalog)
 }
 
 func isSafety(v string) bool {

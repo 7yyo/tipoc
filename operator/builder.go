@@ -76,6 +76,8 @@ func (b *Builder) BuildScaleIn() (Operator, error) {
 		host:        b.Host,
 		port:        b.Port,
 		clusterName: ssh.S.Cluster.Name,
+		cType:       b.CType,
+		deployPath:  b.DeployPath,
 	}, nil
 }
 

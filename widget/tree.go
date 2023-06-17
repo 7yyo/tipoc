@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+var OtherConfig string
+
 func NewTree() (*widgets.Tree, error) {
 	tree := widgets.NewTree()
 	treeNode, err := buildTreeByCatalog()
@@ -31,20 +33,23 @@ func NewTree() (*widgets.Tree, error) {
 
 func buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 
-	f, err := catalogPath.Open(catalog)
+	catalog, err := readCatalog()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer catalog.Close()
 
 	var treeNodes []*widgets.TreeNode
 	var root *widgets.TreeNode
 	var parentNodes []*widgets.TreeNode
-	scanner := bufio.NewScanner(f)
+
+	scanner := bufio.NewScanner(catalog)
 	for scanner.Scan() {
+
 		line := strings.TrimSpace(scanner.Text())
 		level := strings.Count(line, ".")
 		name := strings.TrimLeft(line, "\t")
+
 		node := widgets.TreeNode{
 			Value: newCatalog(name),
 		}
@@ -73,8 +78,6 @@ func buildTreeByCatalog() ([]*widgets.TreeNode, error) {
 	return treeNodes, nil
 }
 
-var OtherConfig string
-
 func appendOther(treeNodes *[]*widgets.TreeNode) error {
 	if OtherConfig != "" {
 		othersNode := widgets.TreeNode{
@@ -82,7 +85,7 @@ func appendOther(treeNodes *[]*widgets.TreeNode) error {
 		}
 		if err := filepath.Walk(OtherConfig, func(path string, info fs.FileInfo, err error) error {
 			if info == nil {
-				log.Logger.Warnf("otherConfig %s is nil or not exists, skip", path)
+				log.Logger.Warnf("otherConfig %s is empty or not exists, skip", path)
 				return nil
 			}
 			if !info.IsDir() {
@@ -107,16 +110,17 @@ func walkTree(tree *widgets.Tree) {
 		if len(node.Nodes) != 0 {
 			node.Value = newCatalog(v)
 		} else {
-			idx := getIdxByName(v)
+			idx := getIdxByValue(v)
 			if _, ok := OTypeMapping[idx]; ok {
 				node.Value = newCatalog(v)
 			} else {
-				if isSafety(v) {
-					node.Value = NewExample(v, -1, SafetyScript)
-				} else if isLoadData(v) {
-					node.Value = NewExample(v, -1, LoadDataTPCC)
-				} else {
-					node.Value = NewExample(v, -1, Script)
+				switch {
+				case isSafety(v):
+					node.Value = NewExample(v, comp.NoBody, SafetyScript)
+				case isLoadData(v):
+					node.Value = NewExample(v, comp.NoBody, LoadDataTPCC)
+				default:
+					node.Value = NewExample(v, comp.NoBody, Script)
 				}
 			}
 		}
@@ -134,7 +138,7 @@ func appendComponent(tree *widgets.Tree) error {
 	tree.Walk(func(node *widgets.TreeNode) bool {
 		switch node.Value.(type) {
 		case *Catalog:
-			idx := getIdxByName(node.Value.String())
+			idx := getIdxByValue(node.Value.String())
 			if _, ok := OTypeMapping[idx]; ok {
 				oTp = OTypeMapping[idx]
 				switch oTp {
