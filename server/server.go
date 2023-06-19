@@ -3,13 +3,8 @@ package server
 import (
 	"fmt"
 	ui "github.com/gizak/termui/v3"
-	"github.com/sirupsen/logrus"
-	"pictorial/comp"
 	"pictorial/log"
-	"pictorial/mysql"
-	"pictorial/ssh"
 	"pictorial/widget"
-	"time"
 )
 
 const logName = "output.log"
@@ -20,60 +15,82 @@ type Server struct {
 
 func New() {
 
-	if err := prepare(); err != nil {
-		panic(err)
-	}
-
+	log.New(logName)
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
 	defer ui.Close()
+	ue := ui.PollEvents()
 
 	s := Server{
 		w: &widget.Widget{
-			T: widget.CreateTree(),
-			C: widget.NewChosen(),
 			O: widget.NewOutput(),
-			P: widget.NewProcessBar(),
-			L: widget.NewLoader(),
 		},
 	}
-	ui.Render(s.w.T, s.w.C, s.w.O, s.w.P, s.w.L)
-
 	go s.captureLog()
+	ui.Render(s.w.O)
+
+	jump := func() error {
+		for {
+			e := <-ue
+			switch e.ID {
+			case widget.KeyCtrlC:
+				return nil
+			}
+		}
+	}
+
+	if err := prepare(); err != nil {
+		log.Logger.Error(err)
+		if jump() == nil {
+			return
+		}
+	}
+	tree, err := widget.BuildTree()
+	if err != nil {
+		log.Logger.Error(err)
+		if jump() == nil {
+			return
+		}
+	}
+
+	s.w.T = tree
+	s.w.S = widget.NewSelected()
+	s.w.L = widget.NewLoad()
+	s.w.P = widget.NewProcessBar()
+	ui.Render(s.w.T, s.w.S, s.w.O, s.w.L, s.w.P)
 
 	previousKey := ""
-	ue := ui.PollEvents()
 	for {
 		e := <-ue
 		switch e.ID {
-		case "a":
-			if previousKey == "a" {
+		case widget.KeySelectAll:
+			if previousKey == widget.KeySelectAll {
 				s.w.AppendAllScripts()
 			}
-		case "g":
-			if previousKey == "g" {
+		case widget.KeyScrollTop:
+			if previousKey == widget.KeyScrollTop {
 				s.w.T.ScrollTop()
 			}
-		case "<Up>":
+		case widget.KeyArrowUp:
 			s.w.T.ScrollUp()
-		case "<Down>":
+		case widget.KeyArrowDown:
 			s.w.T.ScrollDown()
-		case "<Left>":
+		case widget.KeyArrowLeft:
 			s.w.T.Collapse()
-		case "<Right>":
+		case widget.KeyArrowRight:
 			s.w.ScrollRight()
-		case ",":
-			s.w.C.ScrollUp()
-		case ".":
-			s.w.C.ScrollDown()
-		case "<Backspace>":
+		case widget.KeyComma:
+			s.w.S.ScrollUp()
+		case widget.KeyPeriod:
+			s.w.S.ScrollDown()
+		case widget.KeyBackSpace:
 			s.w.ScrollBackSpace()
-		case "<Enter>":
-			if widget.TreeLength(s.w.C) == 0 {
+		case widget.KeyEnter:
+			if widget.TreeLength(s.w.S) == 0 {
 				log.Logger.Warnf("selected is empty.")
 			} else {
-				widget.ScrollTopTree(s.w.C)
+				widget.ScrollTopTree(s.w.S)
 				if err := s.run(); err != nil {
 					if !isCompleteSignal(err) {
 						return
@@ -81,16 +98,16 @@ func New() {
 					continue
 				}
 			}
-		case "<C-c>":
+		case widget.KeyCtrlC:
 			return
 		}
-		if previousKey == "g" || previousKey == "a" {
+		if previousKey == widget.KeyScrollTop || previousKey == widget.KeySelectAll {
 			previousKey = ""
 		} else {
 			previousKey = e.ID
 		}
 
-		ui.Render(s.w.T, s.w.C, s.w.P)
+		ui.Render(s.w.T, s.w.S, s.w.P)
 	}
 }
 
@@ -101,12 +118,7 @@ func (s *Server) run() error {
 		return err
 	}
 
-	cs, err := comp.New()
-	if err != nil {
-		return err
-	}
-
-	j := newJob(examples, s.w.C, cs.Map)
+	j := newJob(examples, s.w.S)
 	go j.run()
 
 	ue := ui.PollEvents()
@@ -123,75 +135,19 @@ func (s *Server) run() error {
 		case ldText := <-j.ldC:
 			s.w.AutoScrollDownLoad(ldText)
 		case <-j.completeC:
-			widget.CleanTree(s.w.C)
+			widget.CleanTree(s.w.S)
 			return fmt.Errorf(completeSignal)
 		}
 	}
 }
 
 func prepare() error {
-
-	log.InitLogger(logName)
-
-	config, err := parseC()
+	cfg, err := parseFlag()
 	if err != nil {
 		return err
 	}
-	if err := checkConfig(config); err != nil {
+	if err := initConfig(cfg); err != nil {
 		return err
-	}
-
-	for k, v := range config.Values() {
-		log.Logger.Infof("%s == %s", k, v)
-	}
-
-	mysql.M.Host = config.Get(mysqlHost).(string)
-	mysql.M.Port = config.Get(mysqlPort).(string)
-	mysql.M.User = config.Get(mysqlUser).(string)
-	mysql.M.Password = config.Get(mysqlPassword).(string)
-
-	comp.PdAddr, err = comp.GetPdAddr()
-	if err != nil {
-		return err
-	}
-
-	ssh.S.User = config.Get(sshUser).(string)
-	if config.Get(sshPassword) != nil {
-		ssh.S.Password = config.Get(sshPassword).(string)
-	}
-	ssh.S.SshPort = config.Get(sshPort).(string)
-	ssh.S.Cluster.Name = config.Get(clusterName).(string)
-	ssh.S.LogC = make(chan string)
-	if err := ssh.S.CheckClusterName(); err != nil {
-		return err
-	}
-	if config.Get(plugin) != nil {
-		ssh.S.Cluster.Plugin = config.Get(plugin).(string)
-	}
-	if err := ssh.S.AddSSHKey(); err != nil {
-		return err
-	}
-	go ssh.S.CommandListener()
-
-	if config.Get(loadCmd) != nil {
-		ld.cmd = config.Get(loadCmd).(string)
-	}
-	if config.Get(loadInterval) != nil {
-		ld.interval = config.Get(loadInterval).(int64)
-	}
-	if config.Get(loadSleep) != nil {
-		ld.sleep = time.Duration(config.Get(loadSleep).(int64))
-	}
-
-	if config.Get(logLevel) != nil {
-		logLevel := config.Get(logLevel).(string)
-		switch logLevel {
-		case "debug":
-			log.Logger.SetLevel(logrus.DebugLevel)
-		}
-	}
-	if config.Get(widget.OtherConfig) != nil {
-		widget.OtherConfig = config.Get(otherDir).(string)
 	}
 	return nil
 }

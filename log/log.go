@@ -13,9 +13,9 @@ import (
 
 var Logger = logrus.New()
 
-func InitLogger(name string) {
+func New(name string) {
 	if err := os.Remove(name); err != nil {
-		if os.IsExist(err) {
+		if err != nil && !os.IsNotExist(err) {
 			panic(err)
 		}
 	}
@@ -32,7 +32,7 @@ type customFormatter struct{}
 
 func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	b := &bytes.Buffer{}
-	timestamp := time.Now().Format("01-02 15:04:05.00")
+	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
 	b.WriteString(fmt.Sprintf("[%s] ", timestamp))
 	level := strings.ToUpper(entry.Level.String())
 	b.WriteString(fmt.Sprintf("[%s] ", level))

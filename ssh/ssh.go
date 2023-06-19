@@ -296,7 +296,7 @@ func isLinux() bool {
 
 const ShellLog = "shell.log"
 
-func (s *SSH) CommandListener() {
+func (s *SSH) ShellListener() {
 	if err := os.Remove(ShellLog); err != nil {
 		if !os.IsNotExist(err) {
 			panic(err)

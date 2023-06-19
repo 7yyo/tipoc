@@ -6,7 +6,7 @@ name = "tidb-test"
 plugin = ""
 
 [mysql]
-host = "10.2.103.202"
+host = "110.2.103.202"
 port = "5000"
 user = "root"
 password = ""

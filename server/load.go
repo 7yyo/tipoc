@@ -21,7 +21,7 @@ func (l *load) run(lgName string, errC chan error) {
 	}
 }
 
-func (l *load) captureLoaderLog(name string, errC chan error, ldC chan string) {
+func (l *load) captureLoadLog(name string, errC chan error, ldC chan string) {
 	time.Sleep(1 * time.Second)
 	t, err := log.Track(name)
 	if err != nil {

@@ -8,25 +8,39 @@ import (
 
 type Widget struct {
 	T *widgets.Tree
-	C *widgets.Tree
+	S *widgets.Tree
 	O *widgets.List
 	P *widgets.Gauge
 	L *widgets.List
 }
 
 const (
-	Tree       = "Tree"
-	Chosen     = "Chosen"
-	Output     = "Output"
-	ProcessBar = "ProcessBar"
-	Loader     = "Loader"
+	KeyArrowUp    = "<Up>"
+	KeyArrowDown  = "<Down>"
+	KeyArrowLeft  = "<Left>"
+	KeyArrowRight = "<Right>"
+	KeyComma      = ","
+	KeyPeriod     = "."
+	KeyBackSpace  = "<Backspace>"
+	KeyEnter      = "<Enter>"
+	KeyCtrlC      = "<C-c>"
+	KeySelectAll  = "a"
+	KeyScrollTop  = "g"
 )
 
-func CreateTree() *widgets.Tree {
+const (
+	Tree       = "tree"
+	Selected   = "selected"
+	Output     = "output"
+	ProcessBar = "processBar"
+	Load       = "load"
+)
+
+func BuildTree() (*widgets.Tree, error) {
 	x, y := ui.TerminalDimensions()
 	t, err := NewTree()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	t.TextStyle = ui.NewStyle(ui.ColorClear)
 	t.Title = Tree
@@ -34,14 +48,14 @@ func CreateTree() *widgets.Tree {
 	t.SetRect(0, 0, x/3, y/2)
 	t.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	t.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorGreen,
+		Fg:       ui.ColorBlue,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
-	return t
+	return t, nil
 }
 
-func NewChosen() *widgets.Tree {
+func NewSelected() *widgets.Tree {
 	x, y := ui.TerminalDimensions()
 	c := widgets.NewTree()
 	c.TextStyle = ui.NewStyle(ui.ColorClear)
@@ -74,10 +88,10 @@ func NewOutput() *widgets.List {
 	return o
 }
 
-func NewLoader() *widgets.List {
+func NewLoad() *widgets.List {
 	x, y := ui.TerminalDimensions()
 	l := widgets.NewList()
-	l.Title = Loader
+	l.Title = Load
 	l.WrapText = false
 	l.TitleStyle = ui.NewStyle(ui.ColorClear)
 	l.SetRect(2*x/3, 0, x, y-1)
@@ -108,14 +122,14 @@ func (w *Widget) ScrollRight() {
 		e := ChangeToExample(w.T.SelectedNode())
 		if len(w.T.SelectedNode().Nodes) == 0 {
 			conflictOrDuplicate := false
-			w.C.Walk(func(node *widgets.TreeNode) bool {
+			w.S.Walk(func(node *widgets.TreeNode) bool {
 				targetNode := ChangeToExample(node)
 				if e.isConflict(targetNode.OType) {
 					conflictOrDuplicate = true
 					log.Logger.Warnf("conflict catalog: %s - %s", GetOTypeValue(e.OType), GetOTypeValue(node.Value.(*Example).OType))
 					return false
 				}
-				if contains(w.C, e.Value) {
+				if contains(w.S, e.Value) {
 					conflictOrDuplicate = true
 					log.Logger.Warnf("duplicate: [%s] %s ", GetOTypeValue(e.OType), e.Value)
 					return false
@@ -129,14 +143,14 @@ func (w *Widget) ScrollRight() {
 				Value: NewExample(e.Value, e.CType, e.OType),
 			}
 			var newChosen []*widgets.TreeNode
-			w.C.Walk(func(treeNode *widgets.TreeNode) bool {
+			w.S.Walk(func(treeNode *widgets.TreeNode) bool {
 				newChosen = append(newChosen, treeNode)
 				return true
 			})
 			newChosen = append(newChosen, &newNode)
-			w.C.SetNodes(newChosen)
-			w.C.ScrollBottom()
-			w.C.Title = GetOTypeValue(e.OType)
+			w.S.SetNodes(newChosen)
+			w.S.ScrollBottom()
+			w.S.Title = GetOTypeValue(e.OType)
 		}
 	case *Catalog:
 		w.T.Expand()
@@ -146,13 +160,13 @@ func (w *Widget) ScrollRight() {
 }
 
 func (w *Widget) ScrollBackSpace() {
-	if w.C.SelectedNode() != nil {
-		value := w.C.SelectedNode().Value.String()
-		removeTreeNode(w.C, value)
-		if TreeLength(w.C) == 0 {
-			w.C.Title = ""
+	if w.S.SelectedNode() != nil {
+		value := w.S.SelectedNode().Value.String()
+		removeTreeNode(w.S, value)
+		if TreeLength(w.S) == 0 {
+			w.S.Title = ""
 		}
-		w.C.ScrollUp()
+		w.S.ScrollUp()
 	}
 }
 
@@ -166,7 +180,7 @@ func (w *Widget) WalkTreeScript() (map[string][]string, error) {
 				value, err := example.getScriptValue()
 				if err != nil {
 					log.Logger.Warn(err)
-					removeTreeNode(w.C, node.Value.String())
+					removeTreeNode(w.S, node.Value.String())
 					return true
 				}
 				examples[example.Value] = value
@@ -178,10 +192,10 @@ func (w *Widget) WalkTreeScript() (map[string][]string, error) {
 }
 
 func (w *Widget) RefreshProcessBar(idx int) {
-	x := (float64(idx) / float64(TreeLength(w.C))) * 100
+	x := (float64(idx) / float64(TreeLength(w.S))) * 100
 	w.P.Percent = int(x) % 101
-	w.C.ScrollDown()
-	ui.Render(w.P, w.C)
+	w.S.ScrollDown()
+	ui.Render(w.P, w.S)
 }
 
 func (w *Widget) AppendAllScripts() {
@@ -195,13 +209,13 @@ func (w *Widget) AppendAllScripts() {
 		}
 		return true
 	})
-	w.C.SetNodes(c)
+	w.S.SetNodes(c)
 	w.T.CollapseAll()
 }
 
 func (w *Widget) AutoScrollDownOutput(s string) {
 	x := w.O.Size().X
-	text := splitByNChars(s, x-2)
+	text := splitByX(s, x-2)
 	for _, t := range text {
 		w.O.Rows = append(w.O.Rows, t)
 		w.O.ScrollDown()
@@ -211,7 +225,7 @@ func (w *Widget) AutoScrollDownOutput(s string) {
 
 func (w *Widget) AutoScrollDownLoad(s string) {
 	x := w.L.Size().X
-	text := splitByNChars(s, x-2)
+	text := splitByX(s, x-2)
 	for _, t := range text {
 		w.L.Rows = append(w.L.Rows, t)
 		w.L.ScrollDown()
@@ -219,10 +233,10 @@ func (w *Widget) AutoScrollDownLoad(s string) {
 	ui.Render(w.L)
 }
 
-func splitByNChars(s string, n int) []string {
+func splitByX(s string, x int) []string {
 	var result []string
-	for i := 0; i < len(s); i += n {
-		end := i + n
+	for i := 0; i < len(s); i += x {
+		end := i + x
 		if end > len(s) {
 			end = len(s)
 		}
