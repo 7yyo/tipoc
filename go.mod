@@ -3,6 +3,7 @@ module pictorial
 go 1.19
 
 require (
+	github.com/disintegration/gift v1.2.1
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/go-mysql-org/go-mysql v1.7.0
 	github.com/hpcloud/tail v1.0.0

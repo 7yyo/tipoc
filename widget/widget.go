@@ -15,21 +15,23 @@ type Widget struct {
 }
 
 const (
-	KeyArrowUp    = "<Up>"
-	KeyArrowDown  = "<Down>"
-	KeyArrowLeft  = "<Left>"
-	KeyArrowRight = "<Right>"
-	KeyComma      = ","
-	KeyPeriod     = "."
-	KeyBackSpace  = "<Backspace>"
-	KeyEnter      = "<Enter>"
-	KeyCtrlC      = "<C-c>"
-	KeySelectAll  = "a"
-	KeyScrollTop  = "g"
+	KeyArrowUp     = "<Up>"
+	KeyArrowDown   = "<Down>"
+	KeyArrowLeft   = "<Left>"
+	KeyArrowRight  = "<Right>"
+	KeyComma       = ","
+	KeyPeriod      = "."
+	KeyBackSpace   = "<Backspace>"
+	KeyEnter       = "<Enter>"
+	KeyCtrlC       = "<C-c>"
+	KeySelectAll   = "a"
+	KeyCollapseAll = "z"
+	KeyRemoveAll   = "d"
+	KeyScrollTop   = "g"
 )
 
 const (
-	Tree       = "tree"
+	Candidate  = "candidate"
 	Selected   = "selected"
 	Output     = "output"
 	ProcessBar = "processBar"
@@ -43,12 +45,12 @@ func BuildTree() (*widgets.Tree, error) {
 		return nil, err
 	}
 	t.TextStyle = ui.NewStyle(ui.ColorClear)
-	t.Title = Tree
+	t.Title = Candidate
 	t.TitleStyle = ui.NewStyle(ui.ColorClear)
 	t.SetRect(0, 0, x/3, y/2)
 	t.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	t.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorBlue,
+		Fg:       ui.ColorYellow,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
@@ -65,7 +67,7 @@ func NewSelected() *widgets.Tree {
 	c.SetRect(x/3, 0, 2*x/3, y/2)
 	c.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	c.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorGreen,
+		Fg:       ui.ColorYellow,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
@@ -213,7 +215,7 @@ func (w *Widget) AppendAllScripts() {
 	w.T.CollapseAll()
 }
 
-func (w *Widget) AutoScrollDownOutput(s string) {
+func (w *Widget) PrintOutput(s string) {
 	x := w.O.Size().X
 	text := splitByX(s, x-2)
 	for _, t := range text {
@@ -223,7 +225,7 @@ func (w *Widget) AutoScrollDownOutput(s string) {
 	ui.Render(w.O)
 }
 
-func (w *Widget) AutoScrollDownLoad(s string) {
+func (w *Widget) PrintLoad(s string) {
 	x := w.L.Size().X
 	text := splitByX(s, x-2)
 	for _, t := range text {

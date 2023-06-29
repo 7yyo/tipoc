@@ -12,7 +12,7 @@ import (
 type crashOperator struct {
 	host       string
 	port       string
-	cType      string
+	cType      comp.CType
 	deployPath string
 }
 
@@ -20,8 +20,9 @@ const systemdPath = "/etc/systemd/system/"
 const service = "%s-%s.service"
 
 func (c *crashOperator) Execute() error {
-	nodeTp := comp.CleanLeaderFlag(c.cType)
-	if c.cType == "tiflash" {
+	co := comp.GetCTypeValue(c.cType)
+	nodeTp := comp.CleanLeaderFlag(co)
+	if co == "tiflash" {
 		port, err := comp.GetTiFlashPort(c.host, c.deployPath)
 		if err != nil {
 			return err

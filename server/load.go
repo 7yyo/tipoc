@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"pictorial/log"
 	"pictorial/ssh"
 	"time"
@@ -14,11 +15,21 @@ type load struct {
 
 var ld load
 
-func (l *load) run(lgName string, errC chan error) {
+func (l *load) run(lgName string, errC chan error, stopLdC chan bool) {
+	log.Logger.Info("start load...")
+	action := "reaches end time"
 	args := []string{"-c", l.cmd}
-	if _, err := ssh.S.RunLocalWithWrite("sh", args, lgName); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-stopLdC
+		log.Logger.Infof("load recive stop singal")
+		cancel()
+		action = "killed"
+	}()
+	if _, err := ssh.S.RunLocalWithContext(ctx, "sh", args, lgName); err != nil {
 		errC <- err
 	}
+	log.Logger.Infof("load %s.", action)
 }
 
 func (l *load) captureLoadLog(name string, errC chan error, ldC chan string) {

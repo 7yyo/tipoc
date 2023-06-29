@@ -85,7 +85,6 @@ func (c *Component) Render(to string) error {
 	}
 	now, from := unixDuration()
 	pls, err := GetPanels()
-	log.Logger.Infof("[render] count: %d", len(pls))
 	if err != nil {
 		return err
 	}

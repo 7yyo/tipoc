@@ -1,5 +1,11 @@
 package comp
 
+import (
+	"fmt"
+	"pictorial/ssh"
+	"strings"
+)
+
 var PdAddr string
 
 const topologyGrafana = "/topology/grafana"
@@ -31,6 +37,7 @@ type Component struct {
 	StatusPort string
 	DeployPath string
 	Labels     map[string]string
+	Status     string
 }
 
 func New() (*Mapping, error) {
@@ -71,4 +78,33 @@ func GetCTypeValue(c CType) string {
 
 func (m *Mapping) GetComponent(c CType) []Component {
 	return m.Map[c]
+}
+
+func GetDataPath(host, deployPath string, cType CType) (string, error) {
+	deployPath = strings.TrimSuffix(deployPath, "/bin")
+	var o []byte
+	var err error
+	switch cType {
+	case TiKV:
+		script := fmt.Sprintf("%s/scripts/run_tikv.sh", deployPath)
+		o, err = ssh.S.RunSSH(host, fmt.Sprintf("grep -oP -- '--data-dir \\K[^\\n:]+' %s | tr -d ' '", script))
+	case PD:
+		script := fmt.Sprintf("%s/scripts/run_pd.sh", deployPath)
+		o, err = ssh.S.RunSSH(host, fmt.Sprintf("grep -oP -- '--data-dir=\\K[^\\s]*' %s", script))
+	default:
+		return "", fmt.Errorf("only support tikv and pd")
+	}
+	if err != nil {
+		return "", nil
+	}
+	dataPath := string(o)
+	dataPath = processDataPath(dataPath)
+	return dataPath, nil
+}
+
+func processDataPath(dp string) string {
+	dp = strings.ReplaceAll(dp, "\"", "")
+	dp = strings.ReplaceAll(dp, "\n", "")
+	dp = strings.TrimSuffix(dp, "\\")
+	return dp
 }

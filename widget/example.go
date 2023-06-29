@@ -32,6 +32,7 @@ const (
 	RecoverSystemd
 	Disaster
 	Reboot
+	DiskFull
 	LoadDataTPCC
 )
 
@@ -57,6 +58,8 @@ func GetOTypeValue(o OType) string {
 		return "disaster"
 	case Reboot:
 		return "reboot"
+	case DiskFull:
+		return "disk_full"
 	case LoadDataTPCC:
 		return "load_data_tpc-c"
 	default:
@@ -72,6 +75,7 @@ var OTypeMapping = map[string]OType{
 	"7.4": Crash,
 	"7.5": Disaster,
 	"7.6": Reboot,
+	"7.7": DiskFull,
 }
 
 func (e Example) String() string {
@@ -98,7 +102,7 @@ func ChangeToExample(node *widgets.TreeNode) *Example {
 	return node.Value.(*Example)
 }
 
-const fragment = "## -"
+const fragment = "## -\n"
 
 func (e Example) getScriptValue() ([]string, error) {
 	fName := e.scriptPath()

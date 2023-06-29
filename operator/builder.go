@@ -2,24 +2,18 @@ package operator
 
 import (
 	"fmt"
+	"pictorial/comp"
 	"pictorial/ssh"
-)
-
-const (
-	kill           = "kill"
-	crash          = "crash"
-	dataCorrupted  = "data_corrupted"
-	recoverSystemd = "recover_systemd"
-	scaleIn        = "scale_in"
-	reboot         = "reboot"
+	"pictorial/widget"
 )
 
 type Builder struct {
 	Host       string
 	Port       string
-	OType      string
-	CType      string
+	OType      widget.OType
+	CType      comp.CType
 	DeployPath string
+	StopC      chan bool
 }
 
 type Operator interface {
@@ -28,18 +22,20 @@ type Operator interface {
 
 func (b *Builder) Build() (Operator, error) {
 	switch b.OType {
-	case kill:
-		return b.BuildKill()
-	case crash:
-		return b.BuildCrash()
-	case dataCorrupted:
-		return b.BuildDataCorrupted()
-	case recoverSystemd:
-		return b.BuildRecoverSystemd()
-	case scaleIn:
+	case widget.ScaleIn:
 		return b.BuildScaleIn()
-	case reboot:
+	case widget.RecoverSystemd:
+		return b.BuildRecoverSystemd()
+	case widget.Kill:
+		return b.BuildKill()
+	case widget.DataCorrupted:
+		return b.BuildDataCorrupted()
+	case widget.Crash:
+		return b.BuildCrash()
+	case widget.Reboot:
 		return b.BuildReboot()
+	case widget.DiskFull:
+		return b.BuildDiskFull()
 	default:
 		return nil, fmt.Errorf("unknown operator: %s", b.OType)
 	}
@@ -47,9 +43,9 @@ func (b *Builder) Build() (Operator, error) {
 
 func (b *Builder) BuildKill() (Operator, error) {
 	return &killOperator{
-		host:        b.Host,
-		port:        b.Port,
-		componentTp: b.CType,
+		host:  b.Host,
+		port:  b.Port,
+		cType: b.CType,
 	}, nil
 }
 
@@ -93,5 +89,15 @@ func (b *Builder) BuildDataCorrupted() (Operator, error) {
 func (b *Builder) BuildReboot() (Operator, error) {
 	return &rebootOperator{
 		host: b.Host,
+	}, nil
+}
+
+func (b *Builder) BuildDiskFull() (Operator, error) {
+	return &diskFullOperator{
+		host:       b.Host,
+		port:       b.Port,
+		cType:      b.CType,
+		deployPath: b.DeployPath,
+		stopC:      b.StopC,
 	}, nil
 }

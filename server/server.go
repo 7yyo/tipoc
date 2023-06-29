@@ -72,6 +72,16 @@ func New() {
 			if previousKey == widget.KeyScrollTop {
 				s.w.T.ScrollTop()
 			}
+		case widget.KeyCollapseAll:
+			if previousKey == widget.KeyCollapseAll {
+				s.w.T.CollapseAll()
+				s.w.T.ScrollTop()
+			}
+		case widget.KeyRemoveAll:
+			if previousKey == widget.KeyRemoveAll {
+				widget.CleanTree(s.w.S)
+				s.w.S.ScrollTop()
+			}
 		case widget.KeyArrowUp:
 			s.w.T.ScrollUp()
 		case widget.KeyArrowDown:
@@ -101,7 +111,10 @@ func New() {
 		case widget.KeyCtrlC:
 			return
 		}
-		if previousKey == widget.KeyScrollTop || previousKey == widget.KeySelectAll {
+		if previousKey == widget.KeyScrollTop ||
+			previousKey == widget.KeySelectAll ||
+			previousKey == widget.KeyCollapseAll ||
+			previousKey == widget.KeyRemoveAll {
 			previousKey = ""
 		} else {
 			previousKey = e.ID
@@ -133,7 +146,7 @@ func (s *Server) run() error {
 		case idx := <-j.barC:
 			s.w.RefreshProcessBar(idx)
 		case ldText := <-j.ldC:
-			s.w.AutoScrollDownLoad(ldText)
+			s.w.PrintLoad(ldText)
 		case <-j.completeC:
 			widget.CleanTree(s.w.S)
 			return fmt.Errorf(completeSignal)
@@ -158,6 +171,6 @@ func (s *Server) captureLog() {
 		panic(err)
 	}
 	for l := range t.Lines {
-		s.w.AutoScrollDownOutput(l.Text)
+		s.w.PrintOutput(l.Text)
 	}
 }

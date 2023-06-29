@@ -12,7 +12,7 @@ import (
 type recoverSystemdOperator struct {
 	host       string
 	port       string
-	cType      string
+	cType      comp.CType
 	deployPath string
 }
 
@@ -20,8 +20,9 @@ const noToAlways = "sudo sed -i 's/no/always/g' %s"
 
 func (r *recoverSystemdOperator) Execute() error {
 	var systemd string
-	nodeTp := comp.CleanLeaderFlag(r.cType)
-	if r.cType == "tiflash" {
+	co := comp.GetCTypeValue(r.cType)
+	nodeTp := comp.CleanLeaderFlag(co)
+	if co == "tiflash" {
 		port, err := comp.GetTiFlashPort(r.host, r.deployPath)
 		if err != nil {
 			return err

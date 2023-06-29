@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"github.com/gizak/termui/v3/widgets"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,22 +30,42 @@ type job struct {
 type channel struct {
 	barC      chan int
 	ldC       chan string
+	stopC     chan bool
 	errC      chan error
 	completeC chan bool
 }
 
-const rd = "./result"
+var loadJob = []widget.OType{
+	widget.ScaleIn,
+	widget.Kill,
+	widget.DataCorrupted,
+	widget.Crash,
+	widget.Disaster,
+	widget.Reboot,
+	widget.DiskFull,
+}
+
+func isLoadJob(o widget.OType) bool {
+	for _, oType := range loadJob {
+		if o == oType {
+			return true
+		}
+	}
+	return false
+}
+
+const resultPath = "./result"
 
 func newJob(e map[string][]string, s *widgets.Tree) job {
 	mkdirResultPath := func() string {
-		if err := os.MkdirAll(rd, os.ModePerm); err != nil {
+		if err := os.MkdirAll(resultPath, os.ModePerm); err != nil {
 			panic(err)
 		}
 		fp, err := os.Getwd()
 		if err != nil {
 			panic(err)
 		}
-		return filepath.Join(fp, rd)
+		return filepath.Join(fp, resultPath)
 	}
 	c, err := comp.New()
 	if err != nil {
@@ -57,6 +78,7 @@ func newJob(e map[string][]string, s *widgets.Tree) job {
 		channel: channel{
 			barC:      make(chan int),
 			ldC:       make(chan string),
+			stopC:     make(chan bool),
 			errC:      make(chan error),
 			completeC: make(chan bool),
 		},
@@ -67,8 +89,11 @@ func newJob(e map[string][]string, s *widgets.Tree) job {
 const completeSignal = "complete_signal"
 
 func (j *job) run() {
-	job := j.selected.SelectedNode().Value.(*widget.Example)
-	switch job.OType {
+
+	tp := j.tp()
+	j.printSelected(tp)
+
+	switch tp {
 	case widget.Script, widget.OtherScript:
 		j.runScript()
 	case widget.SafetyScript:
@@ -78,17 +103,16 @@ func (j *job) run() {
 			j.errC <- err
 			return
 		}
-		switch job.OType {
-		case widget.ScaleIn, widget.Kill, widget.DataCorrupted, widget.Crash, widget.Reboot, widget.Disaster:
+		if isLoadJob(tp) {
 			if ld.cmd != "" {
 				ldName := filepath.Join(j.resultPath, "load.log")
-				go ld.run(ldName, j.channel.errC)
+				go ld.run(ldName, j.channel.errC, j.channel.stopC)
 				go ld.captureLoadLog(ldName, j.errC, j.ldC)
 				time.Sleep(time.Second * 1)
 				cntDown("run items", ld.interval)
 			}
 		}
-		switch job.OType {
+		switch tp {
 		case widget.Disaster:
 			j.runLabel()
 		case widget.LoadDataTPCC:
@@ -96,9 +120,9 @@ func (j *job) run() {
 		default:
 			j.runComponent()
 		}
-		switch job.OType {
-		case widget.ScaleIn, widget.Kill, widget.DataCorrupted, widget.Crash, widget.Reboot, widget.Disaster:
+		if isLoadJob(tp) {
 			cntDown("render", ld.interval)
+			j.channel.stopC <- true
 			if err := j.components[comp.Grafana][0].Render(j.resultPath); err != nil {
 				j.errC <- err
 				return
@@ -109,8 +133,8 @@ func (j *job) run() {
 			return
 		}
 	}
-	log.Logger.Infof("complete at %s", j.resultPath)
-	j.completeC <- true
+	j.channel.completeC <- true
+	log.Logger.Infof("complete at %s.", j.resultPath)
 }
 
 func isCompleteSignal(err error) bool {
@@ -120,29 +144,32 @@ func isCompleteSignal(err error) bool {
 func (j *job) runScript() {
 	if err := resetDB(); err != nil {
 		j.errC <- err
+		return
 	}
-	log.Logger.Info("start job, reset DB complete.")
+	log.Logger.Info("reset DB complete, start job")
 	var cnt int
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
 		cnt++
 		var idx int32
 		var wg sync.WaitGroup
-		var out string
+		var errOut string
 		name := i.Value.String()
 		scripts := j.examples[i.Value.String()]
 		for _, s := range scripts {
 			wg.Add(1)
 			go func(sql string) {
 				defer wg.Done()
-				atomic.AddInt32(&idx, 1)
-				if err := mysql.M.ExecuteAndWrite(sql, rd, name, idx); err != nil {
-					out = err.Error()
+				n := atomic.AddInt32(&idx, 1)
+				output, err := mysql.M.ExecuteForceWithOutput(sql, "root", "")
+				if err != nil {
+					errOut = err.Error()
 				}
+				j.writeResultFile(name, len(scripts), int(n), output)
 			}(s)
 		}
 		wg.Wait()
-		if out != "" {
-			log.Logger.Infof("[warn] %s: %s", name, out)
+		if errOut != "" {
+			log.Logger.Infof("[warn] %s: %s", name, errOut)
 		} else {
 			log.Logger.Infof("[pass] %s", name)
 		}
@@ -158,18 +185,17 @@ func (j *job) runComponent() {
 		j.barC <- cnt
 		e := widget.ChangeToExample(node)
 		addr := strings.Trim(e.String(), comp.Leader)
-		o := node.Value.(*widget.Example).OType
-		oType := widget.GetOTypeValue(o)
-		var failMsg = "[%s] %s failed: %v"
+		var failMsg = "[%s] %s failed: %s"
 		for _, c := range j.components[e.CType] {
 			c.Port = strings.Trim(c.Port, comp.Leader)
 			if addr == net.JoinHostPort(c.Host, c.Port) {
 				b := operator.Builder{
-					OType:      oType,
-					CType:      comp.GetCTypeValue(e.CType),
+					OType:      e.OType,
+					CType:      e.CType,
 					Host:       c.Host,
 					Port:       c.Port,
 					DeployPath: c.DeployPath,
+					StopC:      j.stopC,
 				}
 				r, err := b.Build()
 				if err != nil {
@@ -177,7 +203,7 @@ func (j *job) runComponent() {
 					return true
 				}
 				if err = r.Execute(); err != nil {
-					log.Logger.Errorf(failMsg, oType, addr, err)
+					log.Logger.Errorf(failMsg, widget.GetOTypeValue(e.OType), addr, err.Error())
 					return true
 				}
 			}
@@ -197,8 +223,8 @@ func (j *job) runLabel() {
 					b := operator.Builder{
 						Host:  kv.Host,
 						Port:  kv.Port,
-						OType: widget.GetOTypeValue(widget.Crash),
-						CType: comp.GetCTypeValue(comp.TiKV),
+						OType: widget.Crash,
+						CType: comp.TiKV,
 					}
 					r, _ := b.Build()
 					if err := r.Execute(); err != nil {
@@ -212,10 +238,14 @@ func (j *job) runLabel() {
 		return true
 	})
 	cntDown("render", ld.interval)
-
 }
 
 func (j *job) runLoadData() {
+	tiupRoot, err := ssh.S.WhichTiup()
+	if err != nil {
+		j.errC <- err
+		return
+	}
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		e := widget.ChangeToExample(node)
 		var l load
@@ -224,19 +254,37 @@ func (j *job) runLoadData() {
 		case widget.LoadDataTPCC:
 			warehouses := 10
 			threads := 10
-			tiupRoot, err := ssh.S.WhichTiup()
-			if err != nil {
-				j.errC <- err
-			}
 			lName = fmt.Sprintf("%s/%s.log", j.resultPath, widget.GetOTypeValue(e.OType))
 			log.Logger.Infof("[%s] warehouses: 10, threads: 10, database: %s", widget.GetOTypeValue(e.OType), "tpcc_pp")
 			go ld.captureLoadLog(lName, j.errC, j.ldC)
-			l.cmd = fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp clean; %s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp --warehouses %d --threads %d prepare",
-				tiupRoot, mysql.M.Host, mysql.M.Port, tiupRoot, mysql.M.Host, mysql.M.Port, warehouses, threads)
-			l.run(lName, j.errC)
+			tpccCmd := fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp", tiupRoot, mysql.M.Host, mysql.M.Port)
+			cleanCmd := fmt.Sprintf("%s clean", tpccCmd)
+			prepareCmd := fmt.Sprintf("%s --warehouses %d --threads %d prepare", tpccCmd, warehouses, threads)
+			l.cmd = fmt.Sprintf("%s;%s", cleanCmd, prepareCmd)
+			l.run(lName, j.errC, nil)
 		}
 		return true
 	})
+}
+
+func (j *job) writeResultFile(name string, len, n int, output []string) {
+	var fName string
+	if len == 1 {
+		fName = filepath.Join(j.resultPath, name)
+	} else {
+		fName = filepath.Join(j.resultPath, fmt.Sprintf("%s_%d", name, n))
+	}
+	f, err := os.Create(fName)
+	if err != nil {
+		log.Logger.Warnf("write %s failed: %s", name, err.Error())
+	}
+	defer f.Close()
+	for _, o := range output {
+		_, err = io.WriteString(f, fmt.Sprintf("%s\n", o))
+		if err != nil {
+			log.Logger.Warnf("write %s failed: %s", name, err.Error())
+		}
+	}
 }
 
 const rootUser = "## root"
@@ -254,32 +302,28 @@ func (j *job) runSafety() {
 		name := i.Value.String()
 		scripts := j.examples[i.Value.String()]
 		var err error
-		var out string
+		var output []string
+		var errOutput string
 		for i, sql := range scripts {
-			var user string
-			if i == 0 {
-				user = strings.Split(sql, "\n")[0]
-			} else {
-				user = strings.Split(sql, "\n")[1]
-			}
+			user := strings.Split(sql, "\n")[0]
 			sql = strings.Trim(sql, "\n")
-			fname := filepath.Join(rd, fmt.Sprintf("%s_%d", name, i))
 			switch {
 			case strings.Contains(user, rootUser):
-				sql = strings.ReplaceAll(sql, rootUser, "")
-				err = mysql.M.ExecuteUserAndWrite(sql, fname, "root", "")
+				sql = strings.Trim(sql, fmt.Sprintf("%s\n", rootUser))
+				output, err = mysql.M.ExecuteForceWithOutput(sql, "root", "")
 			case strings.Contains(user, tidbUser):
-				sql = strings.ReplaceAll(sql, tidbUser, "")
-				err = mysql.M.ExecuteUserAndWrite(sql, fname, tidbUserName, tidbUserPassword)
+				sql = strings.Trim(sql, fmt.Sprintf("%s\n", tidbUser))
+				output, err = mysql.M.ExecuteForceWithOutput(sql, tidbUserName, tidbUserPassword)
 			default:
 				err = fmt.Errorf("invalid username, please use 'root' and 'tidb_user'")
 			}
 			if err != nil {
-				out = err.Error()
+				errOutput = err.Error()
 			}
+			j.writeResultFile(name, len(scripts), i, output)
 		}
-		if out != "" {
-			log.Logger.Infof("[warn] %s: %s", name, out)
+		if errOutput != "" {
+			log.Logger.Infof("[warn] %s: %s", name, errOutput)
 		} else {
 			log.Logger.Infof("[pass] %s", name)
 		}
@@ -291,7 +335,7 @@ func (j *job) runSafety() {
 }
 
 func (j *job) createOTypeResult() error {
-	result := fmt.Sprintf("%s/%s_%s", rd, j.selected.Title, log.DateFormat())
+	result := fmt.Sprintf("%s/%s_%s", resultPath, j.selected.Title, log.DateFormat())
 	if err := os.MkdirAll(result, os.ModePerm); err != nil {
 		return err
 	}
@@ -301,6 +345,10 @@ func (j *job) createOTypeResult() error {
 	}
 	j.resultPath = f
 	return nil
+}
+
+func (j *job) tp() widget.OType {
+	return j.selected.SelectedNode().Value.(*widget.Example).OType
 }
 
 func resetDB() error {
@@ -314,4 +362,19 @@ func resetDB() error {
 		return err
 	}
 	return nil
+}
+
+func (j *job) printSelected(tp widget.OType) {
+	log.Logger.Info("you selected:")
+	cnt := 0
+	j.selected.Walk(func(node *widgets.TreeNode) bool {
+		cnt++
+		switch tp {
+		case widget.Script, widget.OtherScript, widget.SafetyScript:
+			log.Logger.Infof("[%d] %s", cnt, node.Value.String())
+		default:
+			log.Logger.Infof("[%d] %s_%s", cnt, widget.GetOTypeValue(tp), node.Value.String())
+		}
+		return true
+	})
 }

@@ -16,6 +16,7 @@
         1.2.7 case_when
         1.2.8 full_join
         1.2.9 page_query
+        1.2.10 replace_into
     1.3 character_set
         1.3.1 utf8
         1.3.2 gbk
@@ -72,6 +73,7 @@
         1.12.4 invisible_index
         1.12.5 secondary_index
         1.12.6 multi_value_index
+        1.12.7 merge_index
     1.13 cache_table
     1.14 temporary_table
         1.14.1 local_temporary_table
@@ -131,5 +133,6 @@
     7.4 crash
     7.5 disaster
     7.6 reboot
+    7.7 disk_full
 8 data_load
     8.1 tpc-c

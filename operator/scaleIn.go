@@ -11,13 +11,14 @@ type scaleInOperator struct {
 	host        string
 	port        string
 	clusterName string
-	cType       string
+	cType       comp.CType
 	deployPath  string
 }
 
 func (s *scaleInOperator) Execute() error {
 	addr := net.JoinHostPort(s.host, s.port)
-	if s.cType == "tiflash" {
+	co := comp.GetCTypeValue(s.cType)
+	if co == "tiflash" {
 		port, err := comp.GetTiFlashPort(s.host, s.deployPath)
 		if err != nil {
 			return err

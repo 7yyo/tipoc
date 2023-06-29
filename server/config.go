@@ -53,7 +53,7 @@ func initConfig(cfg *toml.Tree) error {
 		}
 	}
 	for k, v := range cfg.Values() {
-		log.Logger.Infof("%s == %s", k, v)
+		log.Logger.Infof("%s: %s", k, v)
 	}
 
 	mysql.M.Host = cfg.Get(mysqlHost).(string)

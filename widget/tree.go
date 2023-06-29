@@ -144,7 +144,7 @@ func appendComponent(tree *widgets.Tree) error {
 				switch oTp {
 				case Disaster:
 					appendLabelNode(node, cs.Map)
-				case DataCorrupted:
+				case DataCorrupted, DiskFull:
 					appendComponentNode(node, cs.Map, []comp.CType{comp.TiKV, comp.PD})
 				default:
 					appendComponentNode(node, cs.Map, []comp.CType{comp.TiKV, comp.PD, comp.TiFlash, comp.PD, comp.TiDB})
@@ -157,14 +157,14 @@ func appendComponent(tree *widgets.Tree) error {
 }
 
 func appendComponentNode(node *widgets.TreeNode, m map[comp.CType][]comp.Component, tp []comp.CType) {
-	for k, _ := range m {
-		if hitCType(tp, k) {
-			cTp := comp.GetCTypeValue(k)
+	for cType, _ := range m {
+		if hitCType(tp, cType) {
+			cTp := comp.GetCTypeValue(cType)
 			catalog := newCatalog(cTp)
 			cNode := appendCatalogNode(node, catalog)
-			for _, c := range m[k] {
+			for _, c := range m[cType] {
 				addr := net.JoinHostPort(c.Host, c.Port)
-				e := NewExample(addr, k, oTp)
+				e := NewExample(addr, cType, oTp)
 				appendExampleNode(cNode, e)
 			}
 		}
