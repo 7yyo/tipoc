@@ -1,38 +1,40 @@
-package server
+package job
 
 import (
 	"context"
+	"fmt"
 	"pictorial/log"
 	"pictorial/ssh"
 	"time"
 )
 
-type load struct {
-	cmd      string
-	interval int64
-	sleep    time.Duration
+type Load struct {
+	Cmd      string
+	Interval int64
+	Sleep    time.Duration
+	IsOver   bool
 }
 
-var ld load
+var Ld Load
 
-func (l *load) run(lgName string, errC chan error, stopLdC chan bool) {
-	log.Logger.Info("start load...")
-	action := "reaches end time"
-	args := []string{"-c", l.cmd}
+func (l *Load) run(lgName string, errC chan error, stopLdC chan bool) {
+	log.Logger.Infof("start load: %s", l.Cmd)
+	action := "load ends and exits normally"
+	args := []string{"-c", l.Cmd}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-stopLdC
-		log.Logger.Infof("load recive stop singal")
+		action = fmt.Sprintf("receive kill signal: %s, canel normally.", l.Cmd)
 		cancel()
-		action = "killed"
 	}()
 	if _, err := ssh.S.RunLocalWithContext(ctx, "sh", args, lgName); err != nil {
 		errC <- err
 	}
-	log.Logger.Infof("load %s.", action)
+	log.Logger.Info(action)
+	l.IsOver = true
 }
 
-func (l *load) captureLoadLog(name string, errC chan error, ldC chan string) {
+func (l *Load) captureLoadLog(name string, errC chan error, ldC chan string) {
 	time.Sleep(1 * time.Second)
 	t, err := log.Track(name)
 	if err != nil {
@@ -47,7 +49,7 @@ func cntDown(msg string, cnt int64) {
 	if cnt == 0 {
 		return
 	}
-	log.Logger.Infof("%s in %d minutes.", msg, cnt)
+	log.Logger.Infof("%s after %d minutes...", msg, cnt)
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
@@ -57,7 +59,7 @@ func cntDown(msg string, cnt int64) {
 			if cnt == 0 {
 				return
 			}
-			log.Logger.Infof("%s in %d minutes.", msg, cnt)
+			log.Logger.Infof("after %d minutes...", cnt)
 		}
 	}
 }

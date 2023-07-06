@@ -84,6 +84,10 @@
     1.18 object
         1.18.1 database_object
         1.18.2 table_object
+    1.19 ddl
+        1.19.1 add_index
+        1.19.2 drop_index
+        1.19.3 modify_column
 2 distributed_transaction
     2.1 acid
         2.1.1 atomicity
@@ -136,3 +140,7 @@
     7.7 disk_full
 8 data_load
     8.1 tpc-c
+    8.2 import_into
+    8.3 load_data
+    8.4 select_into_outfile
+9 data_distribution

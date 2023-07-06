@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"pictorial/comp"
+	"pictorial/operator"
 	"strings"
 )
 
@@ -16,73 +17,32 @@ var scriptPath embed.FS
 type Example struct {
 	Value string
 	CType comp.CType
-	OType
+	operator.OType
 }
 
-type OType int
+var OTypeCompMapping = map[string]operator.OType{
+	"5.2": operator.ScaleIn,
+	"7.1": operator.RecoverSystemd,
+	"7.2": operator.Kill,
+	"7.3": operator.DataCorrupted,
+	"7.4": operator.Crash,
+	"7.5": operator.Disaster,
+	"7.6": operator.Reboot,
+	"7.7": operator.DiskFull,
+}
 
-const (
-	Script OType = iota
-	SafetyScript
-	OtherScript
-	ScaleIn
-	Kill
-	DataCorrupted
-	Crash
-	RecoverSystemd
-	Disaster
-	Reboot
-	DiskFull
-	LoadDataTPCC
-)
-
-func GetOTypeValue(o OType) string {
-	switch o {
-	case Script:
-		return "script"
-	case SafetyScript:
-		return "safetyScript"
-	case OtherScript:
-		return "otherScript"
-	case ScaleIn:
-		return "scale_in"
-	case Kill:
-		return "kill"
-	case DataCorrupted:
-		return "data_corrupted"
-	case Crash:
-		return "crash"
-	case RecoverSystemd:
-		return "recover_systemd"
-	case Disaster:
-		return "disaster"
-	case Reboot:
-		return "reboot"
-	case DiskFull:
-		return "disk_full"
-	case LoadDataTPCC:
-		return "load_data_tpc-c"
-	default:
-		return ""
+func IsCompMapping(idx string) bool {
+	if _, ok := OTypeCompMapping[idx]; ok {
+		return true
 	}
-}
-
-var OTypeMapping = map[string]OType{
-	"5.2": ScaleIn,
-	"7.1": RecoverSystemd,
-	"7.2": Kill,
-	"7.3": DataCorrupted,
-	"7.4": Crash,
-	"7.5": Disaster,
-	"7.6": Reboot,
-	"7.7": DiskFull,
+	return false
 }
 
 func (e Example) String() string {
 	return e.Value
 }
 
-func NewExample(v string, c comp.CType, o OType) *Example {
+func NewExample(v string, c comp.CType, o operator.OType) *Example {
 	return &Example{
 		Value: v,
 		CType: c,
@@ -94,7 +54,7 @@ func getIdxByValue(v string) string {
 	return strings.Split(v, " ")[0]
 }
 
-func (e Example) isConflict(o OType) bool {
+func (e Example) isConflict(o operator.OType) bool {
 	return e.OType != o
 }
 
@@ -115,9 +75,9 @@ func (e Example) getScriptValue() ([]string, error) {
 
 func (e Example) scriptPath() string {
 	switch e.OType {
-	case Script, SafetyScript:
+	case operator.Script, operator.SafetyScript:
 		return fmt.Sprintf("script/%s%s", e.Value, ".sql")
-	case OtherScript:
+	case operator.OtherScript:
 		return filepath.Join(OtherConfig, e.Value)
 	default:
 		return ""
@@ -127,13 +87,13 @@ func (e Example) scriptPath() string {
 func (e Example) scriptValue(fName string) (string, error) {
 	var v string
 	switch e.OType {
-	case Script, SafetyScript:
+	case operator.Script, operator.SafetyScript:
 		output, err := scriptPath.ReadFile(fName)
 		if err != nil {
 			return "", e.scriptIsNotExists()
 		}
 		v = e.replaceTableName(output)
-	case OtherScript:
+	case operator.OtherScript:
 		output, err := ioutil.ReadFile(fName)
 		if err != nil {
 			return "", e.scriptIsNotExists()

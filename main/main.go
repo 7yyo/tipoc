@@ -1,8 +1,6 @@
 package main
 
-import (
-	"pictorial/server"
-)
+import "pictorial/server"
 
 func main() {
 	server.New()

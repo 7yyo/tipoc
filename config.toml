@@ -19,7 +19,7 @@ password = "tidb"
 sshPort = "22"
 
 [load]
-cmd = ""
+cmd = "tiup bench tpcc -H 10.2.103.202 -P 5000 -D tpcc --warehouses 1 --threads 10 --ignore-error --time 5m run"
 interval = 0
 sleep = 2
 

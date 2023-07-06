@@ -20,8 +20,9 @@ func isQueryOKOutput(s string) bool {
 }
 
 func isRecordsOutput(s string) bool {
-	reg := regexp.MustCompile(`^Records: \d+  Duplicates: \d+  Warnings: \d+$`)
-	return reg.MatchString(s)
+	reg1 := regexp.MustCompile(`^Records: \d+  Duplicates: \d+  Warnings: \d+$`)
+	reg2 := regexp.MustCompile(`^Records:\s+\d+\s+Deleted:\s+\d+\s+Skipped:\s+\d+\s+Warnings:\s+\d+$`)
+	return reg1.MatchString(s) || reg2.MatchString(s)
 }
 
 func isRowsMatchedOutput(s string) bool {

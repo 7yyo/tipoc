@@ -75,7 +75,8 @@ func (c *Component) preCheck() error {
 	return nil
 }
 
-func (c *Component) Render(to string) error {
+func (c *Component) Render(to string, oType string) error {
+	log.Logger.Info("start grafana image render...")
 	if err := c.preCheck(); err != nil {
 		return err
 	}
@@ -84,7 +85,7 @@ func (c *Component) Render(to string) error {
 		return err
 	}
 	now, from := unixDuration()
-	pls, err := GetPanels()
+	pls, err := getPanels(oType)
 	if err != nil {
 		return err
 	}
@@ -210,8 +211,7 @@ func timeFormat(t time.Time) string {
 }
 
 func printPlugins(o string) {
-	log.Logger.Info("maybe plugins installed:")
-	log.Logger.Info(o)
+	log.Logger.Infof("maybe plugins installed: %s", o)
 }
 
 var dependencies = [2]string{
@@ -241,7 +241,7 @@ type panel struct {
 	Org  string
 }
 
-func GetPanels() (map[string]panel, error) {
+func getPanels(oType string) (map[string]panel, error) {
 	p, err := panelPath.ReadFile(panelYaml)
 	if err != nil {
 		return nil, err
@@ -250,5 +250,28 @@ func GetPanels() (map[string]panel, error) {
 	if err = yaml.Unmarshal(p, &pls); err != nil {
 		return nil, err
 	}
-	return pls, nil
+	newPls := make(map[string]panel)
+	switch oType {
+	case "data_distribution":
+		newPls["region"] = getTargetPanel(pls, "region")
+		newPls["store_size"] = getTargetPanel(pls, "store_size")
+		newPls["leader"] = getTargetPanel(pls, "leader")
+	case "disk_full":
+		newPls["io_util"] = getTargetPanel(pls, "io_util")
+		newPls["duration"] = getTargetPanel(pls, "duration")
+		newPls["qps"] = getTargetPanel(pls, "qps")
+		newPls["pd_uptime"] = getTargetPanel(pls, "pd_uptime")
+		newPls["tikv_uptime"] = getTargetPanel(pls, "tikv_uptime")
+	default:
+		newPls["duration"] = getTargetPanel(pls, "duration")
+		newPls["qps"] = getTargetPanel(pls, "qps")
+		newPls["tidb_uptime"] = getTargetPanel(pls, "tidb_uptime")
+		newPls["pd_uptime"] = getTargetPanel(pls, "pd_uptime")
+		newPls["tikv_uptime"] = getTargetPanel(pls, "tikv_uptime")
+	}
+	return newPls, nil
+}
+
+func getTargetPanel(m map[string]panel, k string) panel {
+	return m[k]
 }

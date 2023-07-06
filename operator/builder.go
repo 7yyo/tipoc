@@ -1,19 +1,79 @@
 package operator
 
 import (
+	"context"
 	"fmt"
 	"pictorial/comp"
 	"pictorial/ssh"
-	"pictorial/widget"
 )
 
 type Builder struct {
-	Host       string
-	Port       string
-	OType      widget.OType
-	CType      comp.CType
+	Host string
+	Port string
+	OType
+	comp.CType
 	DeployPath string
-	StopC      chan bool
+	Ctx        context.Context
+}
+
+type OType int
+
+const (
+	Script OType = iota
+	SafetyScript
+	OtherScript
+	ScaleIn
+	Kill
+	DataCorrupted
+	Crash
+	RecoverSystemd
+	Disaster
+	Reboot
+	DiskFull
+	LoadDataTPCC
+	LoadDataImportInto
+	LoadData
+	LoadDataSelectIntoOutFile
+	DataDistribution
+)
+
+func GetOTypeValue(o OType) string {
+	switch o {
+	case Script:
+		return "script"
+	case SafetyScript:
+		return "safetyScript"
+	case OtherScript:
+		return "otherScript"
+	case ScaleIn:
+		return "scale_in"
+	case Kill:
+		return "kill"
+	case DataCorrupted:
+		return "data_corrupted"
+	case Crash:
+		return "crash"
+	case RecoverSystemd:
+		return "recover_systemd"
+	case Disaster:
+		return "disaster"
+	case Reboot:
+		return "reboot"
+	case DiskFull:
+		return "disk_full"
+	case LoadDataTPCC:
+		return "load_data_tpc-c"
+	case LoadDataImportInto:
+		return "import_into"
+	case LoadData:
+		return "load_data"
+	case LoadDataSelectIntoOutFile:
+		return "select_into_outfile"
+	case DataDistribution:
+		return "data_distribution"
+	default:
+		return ""
+	}
 }
 
 type Operator interface {
@@ -22,19 +82,19 @@ type Operator interface {
 
 func (b *Builder) Build() (Operator, error) {
 	switch b.OType {
-	case widget.ScaleIn:
+	case ScaleIn:
 		return b.BuildScaleIn()
-	case widget.RecoverSystemd:
+	case RecoverSystemd:
 		return b.BuildRecoverSystemd()
-	case widget.Kill:
+	case Kill:
 		return b.BuildKill()
-	case widget.DataCorrupted:
+	case DataCorrupted:
 		return b.BuildDataCorrupted()
-	case widget.Crash:
+	case Crash:
 		return b.BuildCrash()
-	case widget.Reboot:
+	case Reboot:
 		return b.BuildReboot()
-	case widget.DiskFull:
+	case DiskFull:
 		return b.BuildDiskFull()
 	default:
 		return nil, fmt.Errorf("unknown operator: %s", b.OType)
@@ -98,6 +158,6 @@ func (b *Builder) BuildDiskFull() (Operator, error) {
 		port:       b.Port,
 		cType:      b.CType,
 		deployPath: b.DeployPath,
-		stopC:      b.StopC,
+		ctx:        b.Ctx,
 	}, nil
 }

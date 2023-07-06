@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"pictorial/comp"
 	"pictorial/log"
+	"pictorial/operator"
 	"strings"
 )
 
@@ -89,7 +90,7 @@ func appendOther(treeNodes *[]*widgets.TreeNode) error {
 				return nil
 			}
 			if !info.IsDir() {
-				e := NewExample(info.Name(), -1, OtherScript)
+				e := NewExample(info.Name(), -1, operator.OtherScript)
 				appendExampleNode(&othersNode, e)
 			}
 			return nil
@@ -111,16 +112,24 @@ func walkTree(tree *widgets.Tree) {
 			node.Value = newCatalog(v)
 		} else {
 			idx := getIdxByValue(v)
-			if _, ok := OTypeMapping[idx]; ok {
+			if IsCompMapping(idx) {
 				node.Value = newCatalog(v)
 			} else {
 				switch {
 				case isSafety(v):
-					node.Value = NewExample(v, comp.NoBody, SafetyScript)
+					node.Value = NewExample(v, comp.NoBody, operator.SafetyScript)
+				case isLoadDataTPCC(v):
+					node.Value = NewExample(v, comp.NoBody, operator.LoadDataTPCC)
+				case isLoadDataImportInto(v):
+					node.Value = NewExample(v, comp.NoBody, operator.LoadDataImportInto)
 				case isLoadData(v):
-					node.Value = NewExample(v, comp.NoBody, LoadDataTPCC)
+					node.Value = NewExample(v, comp.NoBody, operator.LoadData)
+				case isSelectIntoOutFile(v):
+					node.Value = NewExample(v, comp.NoBody, operator.LoadDataSelectIntoOutFile)
+				case isDataDistribution(v):
+					node.Value = NewExample(v, comp.NoBody, operator.DataDistribution)
 				default:
-					node.Value = NewExample(v, comp.NoBody, Script)
+					node.Value = NewExample(v, comp.NoBody, operator.Script)
 				}
 			}
 		}
@@ -128,7 +137,7 @@ func walkTree(tree *widgets.Tree) {
 	})
 }
 
-var oTp OType
+var oTp operator.OType
 
 func appendComponent(tree *widgets.Tree) error {
 	cs, err := comp.New()
@@ -139,12 +148,12 @@ func appendComponent(tree *widgets.Tree) error {
 		switch node.Value.(type) {
 		case *Catalog:
 			idx := getIdxByValue(node.Value.String())
-			if _, ok := OTypeMapping[idx]; ok {
-				oTp = OTypeMapping[idx]
+			if IsCompMapping(idx) {
+				oTp = OTypeCompMapping[idx]
 				switch oTp {
-				case Disaster:
+				case operator.Disaster:
 					appendLabelNode(node, cs.Map)
-				case DataCorrupted, DiskFull:
+				case operator.DataCorrupted, operator.DiskFull:
 					appendComponentNode(node, cs.Map, []comp.CType{comp.TiKV, comp.PD})
 				default:
 					appendComponentNode(node, cs.Map, []comp.CType{comp.TiKV, comp.PD, comp.TiFlash, comp.PD, comp.TiDB})
@@ -157,13 +166,14 @@ func appendComponent(tree *widgets.Tree) error {
 }
 
 func appendComponentNode(node *widgets.TreeNode, m map[comp.CType][]comp.Component, tp []comp.CType) {
+	var addr string
 	for cType, _ := range m {
 		if hitCType(tp, cType) {
 			cTp := comp.GetCTypeValue(cType)
 			catalog := newCatalog(cTp)
 			cNode := appendCatalogNode(node, catalog)
 			for _, c := range m[cType] {
-				addr := net.JoinHostPort(c.Host, c.Port)
+				addr = net.JoinHostPort(c.Host, c.Port)
 				e := NewExample(addr, cType, oTp)
 				appendExampleNode(cNode, e)
 			}
@@ -183,7 +193,7 @@ func appendLabelNode(node *widgets.TreeNode, m map[comp.CType][]comp.Component) 
 				continue
 			}
 			visited[value] = true
-			e := NewExample(value, comp.TiKV, Disaster)
+			e := NewExample(value, comp.TiKV, operator.Disaster)
 			appendExampleNode(cNode, e)
 		}
 	}

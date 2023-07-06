@@ -8,6 +8,8 @@ import (
 	"pictorial/ssh"
 )
 
+const dataCorrupted = "data_corrupted"
+
 type dataCorruptedOperator struct {
 	host       string
 	port       string
@@ -16,25 +18,16 @@ type dataCorruptedOperator struct {
 }
 
 func (d *dataCorruptedOperator) Execute() error {
-	var dataPath string
-	var err error
-	switch d.cType {
-	case comp.TiKV:
-		dataPath, err = comp.GetDataPath(d.host, d.deployPath, comp.TiKV)
-	case comp.PD:
-		dataPath, err = comp.GetDataPath(d.host, d.deployPath, comp.PD)
-	default:
-		err = fmt.Errorf("only support: tikv, pd")
-	}
+	dataPath, err := comp.GetDataPath(d.host, d.deployPath, d.cType)
+	cType := comp.GetCTypeValue(d.cType)
 	if err != nil {
 		return err
 	}
-	sprintf := fmt.Sprintf("%s_bak", dataPath)
-	cmd := fmt.Sprintf("mv %s %s", dataPath, sprintf)
-	if _, err = ssh.S.RunSSH(d.host, cmd); err != nil {
+	bakName := fmt.Sprintf("%s_bak", dataPath)
+	if _, err := ssh.S.Mv(d.host, dataPath, bakName); err != nil {
 		return err
 	}
 	addr := net.JoinHostPort(d.host, d.port)
-	log.Logger.Infof("[%s] [%s] [%s] [%s] to [%s].", "data_corrupted", comp.GetCTypeValue(d.cType), addr, dataPath, sprintf)
+	log.Logger.Infof("[%s] [%s] [%s] [%s] to [%s].", dataCorrupted, cType, addr, dataPath, bakName)
 	return nil
 }

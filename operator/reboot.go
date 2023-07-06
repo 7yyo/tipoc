@@ -9,10 +9,13 @@ type rebootOperator struct {
 	host string
 }
 
+const reboot = "reboot"
+const rebootCmd = "sudo reboot"
+
 func (r *rebootOperator) Execute() error {
-	if _, err := ssh.S.RunSSH(r.host, "sudo reboot"); err != nil {
+	if _, err := ssh.S.RunSSH(r.host, rebootCmd); err != nil {
 		return err
 	}
-	log.Logger.Infof("[reboot] %s", r.host)
+	log.Logger.Infof("[%s] %s", reboot, r.host)
 	return nil
 }

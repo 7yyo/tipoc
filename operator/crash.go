@@ -17,19 +17,20 @@ type crashOperator struct {
 }
 
 const systemdPath = "/etc/systemd/system/"
-const service = "%s-%s.service"
+const serviceFile = "%s-%s.service"
+const crash = "crash"
 
 func (c *crashOperator) Execute() error {
-	co := comp.GetCTypeValue(c.cType)
-	nodeTp := comp.CleanLeaderFlag(co)
-	if co == "tiflash" {
+	cType := comp.GetCTypeValue(c.cType)
+	cType = comp.CleanLeaderFlag(cType)
+	if cType == "tiflash" {
 		port, err := comp.GetTiFlashPort(c.host, c.deployPath)
 		if err != nil {
 			return err
 		}
 		c.port = port
 	}
-	systemd := fmt.Sprintf(service, nodeTp, c.port)
+	systemd := fmt.Sprintf(serviceFile, cType, c.port)
 	service := filepath.Join(systemdPath, systemd)
 	if _, err := ssh.S.Systemd(c.host, ssh.No, service); err != nil {
 		return err
@@ -40,13 +41,12 @@ func (c *crashOperator) Execute() error {
 		return err
 	}
 	if processID == "" {
-		log.Logger.Warnf("[crash] [%s] %s is offline, skip.", nodeTp, addr)
+		log.Logger.Warnf("[%s] [%s] %s is offline, skip.", crash, cType, addr)
 		return nil
 	}
-	log.Logger.Infof("[crash] [%s] [%s] - %v", nodeTp, addr, processID)
-	o, err := ssh.S.Kill9(c.host, processID)
-	if err != nil {
-		log.Logger.Warnf("[crash] [%s] %s {%s} failed: %v: %s", nodeTp, addr, processID, err, string(o))
+	log.Logger.Infof("[%s] [%s] [%s] - %v", crash, cType, addr, processID)
+	if _, err = ssh.S.Kill9(c.host, processID); err != nil {
+		log.Logger.Error(err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
-package server
+package job
 
 import (
+	"context"
 	"fmt"
 	"github.com/gizak/termui/v3/widgets"
 	"io"
@@ -19,34 +20,54 @@ import (
 	"time"
 )
 
-type job struct {
+type Job struct {
 	selected   *widgets.Tree
 	examples   map[string][]string
 	components map[comp.CType][]comp.Component
-	channel
+	Channel
 	resultPath string
 }
 
-type channel struct {
-	barC      chan int
-	ldC       chan string
-	stopC     chan bool
-	errC      chan error
-	completeC chan bool
+type Channel struct {
+	BarC      chan int
+	LdC       chan string
+	StopC     chan bool
+	ErrC      chan error
+	CompleteC chan bool
 }
 
-var loadJob = []widget.OType{
-	widget.ScaleIn,
-	widget.Kill,
-	widget.DataCorrupted,
-	widget.Crash,
-	widget.Disaster,
-	widget.Reboot,
-	widget.DiskFull,
+var loadJob = []operator.OType{
+	operator.ScaleIn,
+	operator.Kill,
+	operator.DataCorrupted,
+	operator.Crash,
+	operator.Disaster,
+	operator.Reboot,
+	operator.DiskFull,
 }
 
-func isLoadJob(o widget.OType) bool {
+func isLoadJob(o operator.OType) bool {
 	for _, oType := range loadJob {
+		if o == oType {
+			return true
+		}
+	}
+	return false
+}
+
+var renderJob = []operator.OType{
+	operator.ScaleIn,
+	operator.Kill,
+	operator.DataCorrupted,
+	operator.Crash,
+	operator.Disaster,
+	operator.Reboot,
+	operator.DiskFull,
+	operator.DataDistribution,
+}
+
+func isRenderJob(o operator.OType) bool {
+	for _, oType := range renderJob {
 		if o == oType {
 			return true
 		}
@@ -56,7 +77,7 @@ func isLoadJob(o widget.OType) bool {
 
 const resultPath = "./result"
 
-func newJob(e map[string][]string, s *widgets.Tree) job {
+func New(e map[string][]string, s *widgets.Tree) Job {
 	mkdirResultPath := func() string {
 		if err := os.MkdirAll(resultPath, os.ModePerm); err != nil {
 			panic(err)
@@ -71,81 +92,94 @@ func newJob(e map[string][]string, s *widgets.Tree) job {
 	if err != nil {
 		panic(err)
 	}
-	return job{
+	return Job{
 		examples:   e,
 		selected:   s,
 		components: c.Map,
-		channel: channel{
-			barC:      make(chan int),
-			ldC:       make(chan string),
-			stopC:     make(chan bool),
-			errC:      make(chan error),
-			completeC: make(chan bool),
+		Channel: Channel{
+			BarC:      make(chan int),
+			LdC:       make(chan string),
+			StopC:     make(chan bool),
+			ErrC:      make(chan error),
+			CompleteC: make(chan bool),
 		},
 		resultPath: mkdirResultPath(),
 	}
 }
 
-const completeSignal = "complete_signal"
+const CompleteSignal = "complete_signal"
 
-func (j *job) run() {
+func (j *Job) Run() {
 
 	tp := j.tp()
 	j.printSelected(tp)
+	if err := resetDB(); err != nil {
+		j.ErrC <- err
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	switch tp {
-	case widget.Script, widget.OtherScript:
+	case operator.Script, operator.OtherScript:
 		j.runScript()
-	case widget.SafetyScript:
+	case operator.SafetyScript:
 		j.runSafety()
 	default:
 		if err := j.createOTypeResult(); err != nil {
-			j.errC <- err
+			j.ErrC <- err
 			return
 		}
 		if isLoadJob(tp) {
-			if ld.cmd != "" {
+			if Ld.Cmd != "" {
 				ldName := filepath.Join(j.resultPath, "load.log")
-				go ld.run(ldName, j.channel.errC, j.channel.stopC)
-				go ld.captureLoadLog(ldName, j.errC, j.ldC)
+				go Ld.run(ldName, j.Channel.ErrC, j.Channel.StopC)
+				go Ld.captureLoadLog(ldName, j.ErrC, j.LdC)
 				time.Sleep(time.Second * 1)
-				cntDown("run items", ld.interval)
+				cntDown("start executing the test case", Ld.Interval)
 			}
 		}
 		switch tp {
-		case widget.Disaster:
+		case operator.Disaster:
 			j.runLabel()
-		case widget.LoadDataTPCC:
+		case operator.LoadDataTPCC, operator.LoadDataImportInto, operator.LoadData, operator.LoadDataSelectIntoOutFile:
 			j.runLoadData()
+		case operator.DataDistribution:
+			j.runDataDistribution()
 		default:
-			j.runComponent()
+			j.runComponent(ctx)
 		}
-		if isLoadJob(tp) {
-			cntDown("render", ld.interval)
-			j.channel.stopC <- true
-			if err := j.components[comp.Grafana][0].Render(j.resultPath); err != nil {
-				j.errC <- err
+		if isRenderJob(tp) {
+			cntDown("grafana image render", Ld.Interval)
+			log.Logger.Debug(fmt.Sprintf("load over status: %v", Ld.IsOver))
+			if !Ld.IsOver {
+				j.Channel.StopC <- true
+			}
+			time.Sleep(5 * time.Second)
+			if err := j.components[comp.Grafana][0].Render(j.resultPath, operator.GetOTypeValue(tp)); err != nil {
+				j.ErrC <- err
 				return
 			}
 		}
-		if _, err := ssh.S.Transfer(ssh.ShellLog, j.resultPath); err != nil {
-			j.errC <- err
-			return
-		}
 	}
-	j.channel.completeC <- true
+	if _, err := ssh.S.Transfer(ssh.ShellLog, j.resultPath); err != nil {
+		j.ErrC <- err
+		return
+	}
+	if err := os.Remove(ssh.ShellLog); err != nil {
+		j.ErrC <- err
+		return
+	}
+	j.Channel.CompleteC <- true
 	log.Logger.Infof("complete at %s.", j.resultPath)
 }
 
-func isCompleteSignal(err error) bool {
-	return err.Error() == completeSignal
+func IsCompleteSignal(err error) bool {
+	return err.Error() == CompleteSignal
 }
 
-func (j *job) runScript() {
-	if err := resetDB(); err != nil {
-		j.errC <- err
-		return
-	}
+func (j *Job) runScript() {
 	log.Logger.Info("reset DB complete, start job")
 	var cnt int
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
@@ -173,16 +207,15 @@ func (j *job) runScript() {
 		} else {
 			log.Logger.Infof("[pass] %s", name)
 		}
-		j.channel.barC <- cnt
+		j.Channel.BarC <- cnt
 		return true
 	})
 }
 
-func (j *job) runComponent() {
+func (j *Job) runComponent(ctx context.Context) {
 	var cnt int
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		cnt++
-		j.barC <- cnt
 		e := widget.ChangeToExample(node)
 		addr := strings.Trim(e.String(), comp.Leader)
 		var failMsg = "[%s] %s failed: %s"
@@ -195,7 +228,7 @@ func (j *job) runComponent() {
 					Host:       c.Host,
 					Port:       c.Port,
 					DeployPath: c.DeployPath,
-					StopC:      j.stopC,
+					Ctx:        ctx,
 				}
 				r, err := b.Build()
 				if err != nil {
@@ -203,17 +236,18 @@ func (j *job) runComponent() {
 					return true
 				}
 				if err = r.Execute(); err != nil {
-					log.Logger.Errorf(failMsg, widget.GetOTypeValue(e.OType), addr, err.Error())
+					log.Logger.Errorf(failMsg, operator.GetOTypeValue(e.OType), addr, err.Error())
 					return true
 				}
 			}
 		}
-		time.Sleep(time.Second * ld.sleep)
+		time.Sleep(time.Second * Ld.Sleep)
+		j.Channel.BarC <- cnt
 		return true
 	})
 }
 
-func (j *job) runLabel() {
+func (j *Job) runLabel() {
 	kvs := j.components[comp.TiKV]
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
 		targetLabel := i.Value.String()
@@ -223,7 +257,7 @@ func (j *job) runLabel() {
 					b := operator.Builder{
 						Host:  kv.Host,
 						Port:  kv.Port,
-						OType: widget.Crash,
+						OType: operator.Crash,
 						CType: comp.TiKV,
 					}
 					r, _ := b.Build()
@@ -235,39 +269,13 @@ func (j *job) runLabel() {
 			}
 		}
 		log.Logger.Infof("[disaster] %s", targetLabel)
+		j.Channel.BarC <- 1
 		return true
 	})
-	cntDown("render", ld.interval)
+	cntDown("grafana image render", Ld.Interval)
 }
 
-func (j *job) runLoadData() {
-	tiupRoot, err := ssh.S.WhichTiup()
-	if err != nil {
-		j.errC <- err
-		return
-	}
-	j.selected.Walk(func(node *widgets.TreeNode) bool {
-		e := widget.ChangeToExample(node)
-		var l load
-		var lName string
-		switch e.OType {
-		case widget.LoadDataTPCC:
-			warehouses := 10
-			threads := 10
-			lName = fmt.Sprintf("%s/%s.log", j.resultPath, widget.GetOTypeValue(e.OType))
-			log.Logger.Infof("[%s] warehouses: 10, threads: 10, database: %s", widget.GetOTypeValue(e.OType), "tpcc_pp")
-			go ld.captureLoadLog(lName, j.errC, j.ldC)
-			tpccCmd := fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp", tiupRoot, mysql.M.Host, mysql.M.Port)
-			cleanCmd := fmt.Sprintf("%s clean", tpccCmd)
-			prepareCmd := fmt.Sprintf("%s --warehouses %d --threads %d prepare", tpccCmd, warehouses, threads)
-			l.cmd = fmt.Sprintf("%s;%s", cleanCmd, prepareCmd)
-			l.run(lName, j.errC, nil)
-		}
-		return true
-	})
-}
-
-func (j *job) writeResultFile(name string, len, n int, output []string) {
+func (j *Job) writeResultFile(name string, len, n int, output []string) {
 	var fName string
 	if len == 1 {
 		fName = filepath.Join(j.resultPath, name)
@@ -292,11 +300,7 @@ const tidbUser = "## tidb_user"
 const tidbUserName = "tidb_user"
 const tidbUserPassword = "tidb_password"
 
-func (j *job) runSafety() {
-	if err := resetDB(); err != nil {
-		j.errC <- err
-		return
-	}
+func (j *Job) runSafety() {
 	var cnt int
 	j.selected.Walk(func(i *widgets.TreeNode) bool {
 		name := i.Value.String()
@@ -328,13 +332,13 @@ func (j *job) runSafety() {
 			log.Logger.Infof("[pass] %s", name)
 		}
 		cnt++
-		j.channel.barC <- cnt
+		j.Channel.BarC <- cnt
 		return true
 	})
 
 }
 
-func (j *job) createOTypeResult() error {
+func (j *Job) createOTypeResult() error {
 	result := fmt.Sprintf("%s/%s_%s", resultPath, j.selected.Title, log.DateFormat())
 	if err := os.MkdirAll(result, os.ModePerm); err != nil {
 		return err
@@ -347,7 +351,7 @@ func (j *job) createOTypeResult() error {
 	return nil
 }
 
-func (j *job) tp() widget.OType {
+func (j *Job) tp() operator.OType {
 	return j.selected.SelectedNode().Value.(*widget.Example).OType
 }
 
@@ -364,16 +368,16 @@ func resetDB() error {
 	return nil
 }
 
-func (j *job) printSelected(tp widget.OType) {
+func (j *Job) printSelected(tp operator.OType) {
 	log.Logger.Info("you selected:")
 	cnt := 0
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		cnt++
 		switch tp {
-		case widget.Script, widget.OtherScript, widget.SafetyScript:
+		case operator.Script, operator.OtherScript, operator.SafetyScript:
 			log.Logger.Infof("[%d] %s", cnt, node.Value.String())
 		default:
-			log.Logger.Infof("[%d] %s_%s", cnt, widget.GetOTypeValue(tp), node.Value.String())
+			log.Logger.Infof("[%d] %s_%s", cnt, operator.GetOTypeValue(tp), node.Value.String())
 		}
 		return true
 	})

@@ -8,6 +8,7 @@ import (
 	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/mysql"
+	"pictorial/server/job"
 	"pictorial/ssh"
 	"pictorial/widget"
 	"time"
@@ -53,7 +54,7 @@ func initConfig(cfg *toml.Tree) error {
 		}
 	}
 	for k, v := range cfg.Values() {
-		log.Logger.Infof("%s: %s", k, v)
+		log.Logger.Debugf("%s: %s", k, v)
 	}
 
 	mysql.M.Host = cfg.Get(mysqlHost).(string)
@@ -86,13 +87,13 @@ func initConfig(cfg *toml.Tree) error {
 	go ssh.S.ShellListener()
 
 	if cfg.Get(loadCmd) != nil {
-		ld.cmd = cfg.Get(loadCmd).(string)
+		job.Ld.Cmd = cfg.Get(loadCmd).(string)
 	}
 	if cfg.Get(loadInterval) != nil {
-		ld.interval = cfg.Get(loadInterval).(int64)
+		job.Ld.Interval = cfg.Get(loadInterval).(int64)
 	}
 	if cfg.Get(loadSleep) != nil {
-		ld.sleep = time.Duration(cfg.Get(loadSleep).(int64))
+		job.Ld.Sleep = time.Duration(cfg.Get(loadSleep).(int64))
 	}
 
 	if cfg.Get(logLevel) != nil {

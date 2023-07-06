@@ -4,6 +4,7 @@ import (
 	"fmt"
 	ui "github.com/gizak/termui/v3"
 	"pictorial/log"
+	"pictorial/server/job"
 	"pictorial/widget"
 )
 
@@ -102,7 +103,7 @@ func New() {
 			} else {
 				widget.ScrollTopTree(s.w.S)
 				if err := s.run(); err != nil {
-					if !isCompleteSignal(err) {
+					if !job.IsCompleteSignal(err) {
 						return
 					}
 					continue
@@ -131,8 +132,8 @@ func (s *Server) run() error {
 		return err
 	}
 
-	j := newJob(examples, s.w.S)
-	go j.run()
+	j := job.New(examples, s.w.S)
+	go j.Run()
 
 	ue := ui.PollEvents()
 	for {
@@ -141,15 +142,15 @@ func (s *Server) run() error {
 			if e.ID == "<C-c>" {
 				return nil
 			}
-		case err := <-j.errC:
+		case err := <-j.Channel.ErrC:
 			log.Logger.Error(err)
-		case idx := <-j.barC:
+		case idx := <-j.Channel.BarC:
 			s.w.RefreshProcessBar(idx)
-		case ldText := <-j.ldC:
+		case ldText := <-j.Channel.LdC:
 			s.w.PrintLoad(ldText)
-		case <-j.completeC:
+		case <-j.Channel.CompleteC:
 			widget.CleanTree(s.w.S)
-			return fmt.Errorf(completeSignal)
+			return fmt.Errorf(job.CompleteSignal)
 		}
 	}
 }

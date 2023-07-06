@@ -4,6 +4,7 @@ import (
 	ui "github.com/gizak/termui/v3"
 	"github.com/gizak/termui/v3/widgets"
 	"pictorial/log"
+	"pictorial/operator"
 )
 
 type Widget struct {
@@ -50,7 +51,7 @@ func BuildTree() (*widgets.Tree, error) {
 	t.SetRect(0, 0, x/3, y/2)
 	t.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	t.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorYellow,
+		Fg:       ui.ColorBlue,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
@@ -67,7 +68,7 @@ func NewSelected() *widgets.Tree {
 	c.SetRect(x/3, 0, 2*x/3, y/2)
 	c.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	c.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorYellow,
+		Fg:       ui.ColorBlue,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
@@ -128,12 +129,12 @@ func (w *Widget) ScrollRight() {
 				targetNode := ChangeToExample(node)
 				if e.isConflict(targetNode.OType) {
 					conflictOrDuplicate = true
-					log.Logger.Warnf("conflict catalog: %s - %s", GetOTypeValue(e.OType), GetOTypeValue(node.Value.(*Example).OType))
+					log.Logger.Warnf("conflict catalog: %s - %s", operator.GetOTypeValue(e.OType), operator.GetOTypeValue(node.Value.(*Example).OType))
 					return false
 				}
 				if contains(w.S, e.Value) {
 					conflictOrDuplicate = true
-					log.Logger.Warnf("duplicate: [%s] %s ", GetOTypeValue(e.OType), e.Value)
+					log.Logger.Warnf("duplicate: [%s] %s ", operator.GetOTypeValue(e.OType), e.Value)
 					return false
 				}
 				return true
@@ -152,7 +153,7 @@ func (w *Widget) ScrollRight() {
 			newChosen = append(newChosen, &newNode)
 			w.S.SetNodes(newChosen)
 			w.S.ScrollBottom()
-			w.S.Title = GetOTypeValue(e.OType)
+			w.S.Title = operator.GetOTypeValue(e.OType)
 		}
 	case *Catalog:
 		w.T.Expand()
@@ -178,7 +179,7 @@ func (w *Widget) WalkTreeScript() (map[string][]string, error) {
 		switch example := node.Value.(type) {
 		case *Example:
 			switch example.OType {
-			case Script, SafetyScript, OtherScript:
+			case operator.Script, operator.SafetyScript, operator.OtherScript:
 				value, err := example.getScriptValue()
 				if err != nil {
 					log.Logger.Warn(err)
@@ -205,7 +206,7 @@ func (w *Widget) AppendAllScripts() {
 	w.T.Walk(func(node *widgets.TreeNode) bool {
 		switch e := node.Value.(type) {
 		case *Example:
-			if e.OType == Script || e.OType == OtherScript || e.OType == SafetyScript {
+			if e.OType == operator.Script || e.OType == operator.OtherScript || e.OType == operator.SafetyScript {
 				c = append(c, node)
 			}
 		}

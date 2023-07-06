@@ -27,3 +27,27 @@ tikv_uptime:
   tab: "tikv-details"
   name: "tikv_uptime"
   org: "RDVQiEzZz"
+
+leader:
+  id: "1715"
+  tab: "tikv-details"
+  name: "leader"
+  org: "RDVQiEzZz"
+
+region:
+  id: "1714"
+  tab: "tikv-details"
+  name: "region"
+  org: "RDVQiEzZz"
+
+store_size:
+  id: "56"
+  tab: "tikv-details"
+  name: "store_size"
+  org: "RDVQiEzZz"
+
+io_util:
+  id: "61"
+  tab: "overview"
+  name: "io_util"
+  org: "eDbRZpnWk"

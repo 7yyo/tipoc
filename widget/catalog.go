@@ -33,6 +33,22 @@ func isSafety(v string) bool {
 	return strings.HasPrefix(v, "6")
 }
 
+func isLoadDataTPCC(v string) bool {
+	return strings.HasPrefix(v, "8.1")
+}
+
+func isLoadDataImportInto(v string) bool {
+	return strings.HasPrefix(v, "8.2")
+}
+
 func isLoadData(v string) bool {
-	return strings.HasPrefix(v, "8")
+	return strings.HasPrefix(v, "8.3")
+}
+
+func isSelectIntoOutFile(v string) bool {
+	return strings.HasPrefix(v, "8.4")
+}
+
+func isDataDistribution(v string) bool {
+	return strings.HasPrefix(v, "9")
 }

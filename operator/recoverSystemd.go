@@ -16,8 +16,6 @@ type recoverSystemdOperator struct {
 	deployPath string
 }
 
-const noToAlways = "sudo sed -i 's/no/always/g' %s"
-
 func (r *recoverSystemdOperator) Execute() error {
 	var systemd string
 	co := comp.GetCTypeValue(r.cType)
@@ -29,7 +27,7 @@ func (r *recoverSystemdOperator) Execute() error {
 		}
 		r.port = port
 	}
-	systemd = fmt.Sprintf(service, nodeTp, r.port)
+	systemd = fmt.Sprintf(serviceFile, nodeTp, r.port)
 	service := filepath.Join(systemdPath, systemd)
 	if _, err := ssh.S.Systemd(r.host, ssh.Always, service); err != nil {
 		return err

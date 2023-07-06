@@ -240,11 +240,17 @@ func formatCommand(c string, host string) string {
 }
 
 func formatStdout(stdout bytes.Buffer) string {
-	out := strings.ReplaceAll(stdout.String(), "\n", "")
-	return fmt.Sprintf("[%s] [stdout] %s\n", log.DateFormat(), out)
+	output := strings.TrimSuffix(stdout.String(), "\n")
+	if stdout.String() != "" {
+		return fmt.Sprintf("%s\n", output)
+	}
+	return ""
 }
 
 func formatStderr(stderr bytes.Buffer) string {
-	err := strings.ReplaceAll(stderr.String(), "\n", "")
-	return fmt.Sprintf("[%s] [stderr] %s\n", log.DateFormat(), err)
+	output := strings.TrimSuffix(stderr.String(), "\n")
+	if stderr.String() != "" {
+		return fmt.Sprintf("%s\n", output)
+	}
+	return ""
 }
