@@ -2,6 +2,7 @@
 Automated test case tool for TiDB
 
 ## UI
+![ui](https://github.com/7yyo/tipoc/blob/master/img/Screenshot%202023-07-06%20at%2023.57.09.png)
 
 ## configuration
 ```toml[log]
