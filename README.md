@@ -1,4 +1,10 @@
-[log]
+# TiPoC
+Automated test case tool for TiDB
+
+## UI
+
+## configuration
+```toml[log]
 level = "info"
 
 [cluster]
@@ -23,3 +29,13 @@ sleep = 2
 [other]
 dir = "/go/src/pictorial/other"
 
+
+
+```
+
+## how 
+
+```shell
+go build -o tipoc main/main.go
+./tipoc -c config.toml
+```
