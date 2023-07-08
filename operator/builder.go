@@ -34,6 +34,7 @@ const (
 	LoadDataImportInto
 	LoadData
 	LoadDataSelectIntoOutFile
+	DataSeparation
 	DataDistribution
 	OnlineDDLAddIndex
 	InstallSysBench
@@ -71,6 +72,8 @@ func GetOTypeValue(o OType) string {
 		return "load_data"
 	case LoadDataSelectIntoOutFile:
 		return "select_into_outfile"
+	case DataSeparation:
+		return "data_separation"
 	case DataDistribution:
 		return "data_distribution"
 	case OnlineDDLAddIndex:

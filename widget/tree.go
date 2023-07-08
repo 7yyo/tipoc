@@ -126,6 +126,8 @@ func walkTree(tree *widgets.Tree) {
 					node.Value = NewExample(v, comp.NoBody, operator.LoadData)
 				case isSelectIntoOutFile(v):
 					node.Value = NewExample(v, comp.NoBody, operator.LoadDataSelectIntoOutFile)
+				case isDataSeparation(v):
+					node.Value = NewExample(v, comp.NoBody, operator.DataSeparation)
 				case isDataDistribution(v):
 					node.Value = NewExample(v, comp.NoBody, operator.DataDistribution)
 				case isOnlineDDLAddIndex(v):

@@ -28,9 +28,6 @@ sleep = 2
 
 [other]
 dir = "/go/src/pictorial/other"
-
-
-
 ```
 
 ## how 
@@ -39,3 +36,29 @@ dir = "/go/src/pictorial/other"
 go build -o tipoc main/main.go
 ./tipoc -c config.toml
 ```
+
+## todo
+#### base test case
+- [] more and more (currently, there are over 100)
+#### high availability
+- [x] kill
+- [x] crash
+- [x] disaster by label
+- [x] reboot
+- [x] disk
+- [ ] network
+#### data load
+- [x] load data
+- [x] import into
+- [x] select info outfile
+#### scalability
+- [ ] scale out
+- [x] scale in
+#### online ddl
+- [x] online add index
+- [ ] online modify column
+#### htap
+- [ ] htap workload
+#### auto install
+- [x] sysbench
+- [ ] benchmarkSQL

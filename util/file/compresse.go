@@ -91,29 +91,36 @@ func UnzipPackage(zipFile, target string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
-	os.MkdirAll(target, 0755)
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return err
+	}
+	var rc io.ReadCloser
+	var file *os.File
+	defer func() {
+		r.Close()
+		rc.Close()
+		file.Close()
+	}()
 	for _, f := range r.File {
-		rc, err := f.Open()
+		rc, err = f.Open()
 		if err != nil {
 			return err
 		}
 		filePath := filepath.Join(target, f.Name)
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(filePath, f.Mode())
-		} else {
-			dirPath := filepath.Dir(filePath)
-			os.MkdirAll(dirPath, f.Mode())
-
-			file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-			if err != nil {
-				rc.Close()
+			if err := os.MkdirAll(filePath, f.Mode()); err != nil {
 				return err
 			}
-			_, err = io.Copy(file, rc)
-			file.Close()
-			rc.Close()
+		} else {
+			dirPath := filepath.Dir(filePath)
+			if err := os.MkdirAll(dirPath, f.Mode()); err != nil {
+				return err
+			}
+			file, err = os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 			if err != nil {
+				return err
+			}
+			if _, err = io.Copy(file, rc); err != nil {
 				return err
 			}
 		}

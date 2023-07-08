@@ -155,6 +155,8 @@ func (j *Job) Run() {
 			}
 		}
 		switch oType {
+		case operator.DataSeparation:
+			j.runDataSeparation()
 		case operator.Disaster:
 			j.runLabel()
 		case operator.LoadDataTPCC, operator.LoadDataImportInto, operator.LoadData, operator.LoadDataSelectIntoOutFile:
@@ -179,7 +181,7 @@ func (j *Job) Run() {
 		if !Ld.IsOver {
 			j.Channel.StopC <- true
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 		if err := j.components[comp.Grafana][0].Render(j.resultPath, ov); err != nil {
 			j.ErrC <- err
 			return

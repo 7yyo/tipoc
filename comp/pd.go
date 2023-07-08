@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+const LeaderDistributionSQL = "use information_schema; " +
+	"select trp.store_id, address, trs.region_id ,trs.db_name " +
+	"from tikv_region_peers trp join tikv_store_status tss on tss.store_id = trp.store_id join tikv_region_status trs on trp.region_id = trs.region_id " +
+	"where trs.table_name = '%s' and trp.is_leader = 1;"
+
 type PlacementDriver struct {
 	Members []struct {
 		ClientURLs []string `json:"client_urls"`

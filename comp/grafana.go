@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"pictorial/etcd"
@@ -47,8 +48,11 @@ func (m *Mapping) GetGrafana() error {
 
 const pluginName = "plugin-linux-x64-glibc"
 
+var zipIdx = [6]string{"a", "b", "c", "d", "e", "f"}
+
 func (c *Component) installPlugin() error {
 	s := ssh.S
+	zipPackage := fmt.Sprintf("%s.zip", pluginName)
 	pluginPath := filepath.Join(c.DeployPath, "plugins")
 	defer func() {
 		if _, err := s.Restart("grafana"); err != nil {
@@ -63,17 +67,25 @@ func (c *Component) installPlugin() error {
 		log.Logger.Infof("grafana image render installed.")
 		return nil
 	}
-
-	mergeZip, err := os.Create(fmt.Sprintf("%s.zip", pluginName))
+	mergeZip, err := os.Create(zipPackage)
 	if err != nil {
 		return err
 	}
-	defer mergeZip.Close()
-
-	idx := []string{"a", "b", "c", "d", "e", "f"}
-
-	for i := 0; i < len(idx); i++ {
-		f, err := RenderPlugin.Open(fmt.Sprintf("resource/%s.zip.a%s", pluginName, idx[i]))
+	var f fs.File
+	defer func() {
+		if err := os.RemoveAll(pluginName); err != nil {
+			log.Logger.Error(err)
+		}
+		if err := os.Remove(zipPackage); err != nil {
+			log.Logger.Error(err)
+		}
+		mergeZip.Close()
+		f.Close()
+	}()
+	for _, idx := range zipIdx {
+		split := fmt.Sprintf("resource/%s.zip.a%s", pluginName, idx)
+		f, err = RenderPlugin.Open(split)
+		log.Logger.Infof("copy %s -> %s", split, mergeZip.Name())
 		if _, err = io.Copy(mergeZip, f); err != nil {
 			return err
 		}
@@ -86,7 +98,10 @@ func (c *Component) installPlugin() error {
 	if _, err := s.TransferR(pluginName, target); err != nil {
 		return err
 	}
-	return c.dependencies()
+	if err := c.dependencies(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Component) Render(to string, oType string) error {
@@ -232,7 +247,7 @@ var dependencies = [2]string{
 func (c *Component) dependencies() error {
 	log.Logger.Infof("check for dependencies %v, maybe take a while...", dependencies)
 	for _, d := range dependencies {
-		if _, err := ssh.S.RunSSH(c.Host, fmt.Sprintf("sudo yum install -y %s", d)); err != nil {
+		if _, err := ssh.S.YumInstall(c.Host, d); err != nil {
 			log.Logger.Warn(err)
 		}
 	}

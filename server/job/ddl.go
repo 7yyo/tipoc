@@ -26,14 +26,14 @@ func (j *Job) runOnlineDDL() {
 func (j *Job) runOnlineDDLAddIndex() {
 	ov := operator.GetOTypeValue(operator.OnlineDDLAddIndex)
 	j.runInstallSysBench()
-	prepareCmd := fmt.Sprintf(oltpWriteRead, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "1000000", "1", "10", "prepare")
+	prepareCmd := fmt.Sprintf(oltpWriteRead, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "1000000", "1", "10", "prepare")
 	log.Logger.Info(fmt.Sprintf("[%s] init data: %s", ov, prepareCmd))
 	if _, err := ssh.S.RunLocal(prepareCmd); err != nil {
 		j.ErrC <- err
 		return
 	}
 	go func() {
-		runCmd := fmt.Sprintf(oltpWriteRead, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "1000000", "1", "10", "--time=3600 run")
+		runCmd := fmt.Sprintf(oltpWriteRead, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "1000000", "1", "10", "--time=3600 run")
 		log.Logger.Infof("[%s] run sysbench oltp_write_read.", "online_ddl_add_index")
 		Ld.Cmd = runCmd
 		logName := filepath.Join(j.resultPath, "load.log")

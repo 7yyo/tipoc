@@ -114,7 +114,7 @@ func (j *Job) runLoadDataJob() {
 func (j *Job) runSelectIntoOutFile() {
 	ov := operator.GetOTypeValue(operator.LoadDataSelectIntoOutFile)
 	j.runInstallSysBench()
-	load := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "1000000", "1", "5", "prepare")
+	load := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "1000000", "1", "5", "prepare")
 	log.Logger.Infof("[%s] %s", ov, load)
 	if _, err := ssh.S.RunLocal(load); err != nil {
 		j.ErrC <- err
@@ -138,7 +138,7 @@ func (j *Job) runSelectIntoOutFile() {
 func (j *Job) runDataDistribution() {
 	ov := operator.GetOTypeValue(operator.DataDistribution)
 	lName := fmt.Sprintf("%s/%s.log", j.resultPath, ov)
-	sysbench := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "10000000", "1", "5", "prepare")
+	sysbench := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "10000000", "1", "5", "prepare")
 	log.Logger.Infof("[%s] %s", ov, sysbench)
 	go Ld.captureLoadLog(lName, j.Channel.ErrC, j.Channel.LdC)
 	j.runInstallSysBench()

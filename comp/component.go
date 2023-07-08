@@ -11,6 +11,7 @@ var PdAddr string
 const topologyGrafana = "/topology/grafana"
 
 const membersUrl = "http://%s/pd/api/v1/members"
+const pdConfigUrl = "http://%s/pd/api/v1/config"
 const storeUrl = "http://%s/pd/api/v1/stores"
 const tidbAllInfoUrl = "http://%s/info/all"
 
@@ -26,6 +27,23 @@ const (
 	TiFlash
 	Grafana
 )
+
+func GetCTypeValue(c CType) string {
+	switch c {
+	case TiDB:
+		return "tidb"
+	case TiKV:
+		return "tikv"
+	case PD:
+		return "pd"
+	case TiFlash:
+		return "tiflash"
+	case Grafana:
+		return "grafana"
+	default:
+		return ""
+	}
+}
 
 type Mapping struct {
 	Map map[CType][]Component
@@ -57,23 +75,6 @@ func New() (*Mapping, error) {
 		return nil, err
 	}
 	return &m, nil
-}
-
-func GetCTypeValue(c CType) string {
-	switch c {
-	case TiDB:
-		return "tidb"
-	case TiKV:
-		return "tikv"
-	case PD:
-		return "pd"
-	case TiFlash:
-		return "tiflash"
-	case Grafana:
-		return "grafana"
-	default:
-		return ""
-	}
 }
 
 func (m *Mapping) GetComponent(c CType) []Component {

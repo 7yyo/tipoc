@@ -29,12 +29,16 @@ func readCatalog() (fs.File, error) {
 	return catalogPath.Open(catalog)
 }
 
-func isOnlineDDLAddIndex(v string) bool {
-	return strings.HasPrefix(v, "3.5")
+func isDataSeparation(v string) bool {
+	return strings.HasPrefix(v, "1.16.1")
 }
 
 func isDataDistribution(v string) bool {
 	return strings.HasPrefix(v, "1.19")
+}
+
+func isOnlineDDLAddIndex(v string) bool {
+	return strings.HasPrefix(v, "3.5")
 }
 
 func isSafety(v string) bool {
