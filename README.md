@@ -39,7 +39,7 @@ go build -o tipoc main/main.go
 
 ## todo
 #### base test case
-- [] more and more (currently, there are over 100)
+- [ ] more and more (currently, there are over 100)
 #### high availability
 - [x] kill
 - [x] crash
