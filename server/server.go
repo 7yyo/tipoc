@@ -8,7 +8,7 @@ import (
 	"pictorial/widget"
 )
 
-const logName = "output.log"
+const outputLog = "output.log"
 
 type Server struct {
 	w *widget.Widget
@@ -16,12 +16,12 @@ type Server struct {
 
 func New() {
 
-	log.New(logName)
+	log.New(outputLog)
+
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
 	defer ui.Close()
-	ue := ui.PollEvents()
 
 	s := Server{
 		w: &widget.Widget{
@@ -31,6 +31,7 @@ func New() {
 	go s.captureLog()
 	ui.Render(s.w.O)
 
+	ue := ui.PollEvents()
 	jump := func() error {
 		for {
 			e := <-ue
@@ -167,7 +168,7 @@ func prepare() error {
 }
 
 func (s *Server) captureLog() {
-	t, err := log.Track(logName)
+	t, err := log.Track(outputLog)
 	if err != nil {
 		panic(err)
 	}

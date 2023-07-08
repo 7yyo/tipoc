@@ -27,7 +27,7 @@ func RandomStr(length int) string {
 }
 
 func InitCSV(fName string, rowSize, colNum int) error {
-	log.Logger.Infof("init csv start: %s", fName)
+	log.Logger.Infof("init csv start: %s, rowCnt: %d, colNum: %d", fName, rowSize, colNum)
 	csv, err := os.Create(fName)
 	if err != nil {
 		return err
@@ -53,6 +53,6 @@ func InitCSV(fName string, rowSize, colNum int) error {
 		)
 		_, _ = csv.WriteString(line)
 	}
-	log.Logger.Infof("init csv complete: %s", fName)
+	log.Logger.Info("init csv complete.")
 	return nil
 }

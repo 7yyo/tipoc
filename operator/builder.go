@@ -35,6 +35,8 @@ const (
 	LoadData
 	LoadDataSelectIntoOutFile
 	DataDistribution
+	OnlineDDLAddIndex
+	InstallSysBench
 )
 
 func GetOTypeValue(o OType) string {
@@ -71,6 +73,10 @@ func GetOTypeValue(o OType) string {
 		return "select_into_outfile"
 	case DataDistribution:
 		return "data_distribution"
+	case OnlineDDLAddIndex:
+		return "online_ddl_add_index"
+	case InstallSysBench:
+		return "install_sys_bench"
 	default:
 		return ""
 	}

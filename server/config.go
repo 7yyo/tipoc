@@ -22,11 +22,11 @@ const (
 	mysqlUser     = "mysql.user"
 	mysqlPassword = "mysql.password"
 
-	sshUser      = "ssh.user"
-	sshPassword  = "ssh.password"
-	sshPort      = "ssh.sshPort"
+	sshUser     = "ssh.user"
+	sshPassword = "ssh.password"
+	sshPort     = "ssh.sshPort"
+
 	clusterName  = "cluster.name"
-	plugin       = "cluster.plugin"
 	loadCmd      = "load.cmd"
 	loadInterval = "load.interval"
 	loadSleep    = "load.sleep"
@@ -50,7 +50,7 @@ func parseFlag() (*toml.Tree, error) {
 func initConfig(cfg *toml.Tree) error {
 	for _, c := range notNil {
 		if cfg.Get(c) == nil {
-			return fmt.Errorf("config: %s must not be empty", c)
+			return fmt.Errorf("config [%s] must not be empty", c)
 		}
 	}
 	for k, v := range cfg.Values() {
@@ -78,14 +78,9 @@ func initConfig(cfg *toml.Tree) error {
 	if err := ssh.S.CheckClusterName(); err != nil {
 		return err
 	}
-	if cfg.Get(plugin) != nil {
-		ssh.S.Cluster.Plugin = cfg.Get(plugin).(string)
-	}
 	if err := ssh.S.AddSSHKey(); err != nil {
 		return err
 	}
-	go ssh.S.ShellListener()
-
 	if cfg.Get(loadCmd) != nil {
 		job.Ld.Cmd = cfg.Get(loadCmd).(string)
 	}

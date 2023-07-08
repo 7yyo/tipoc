@@ -21,7 +21,6 @@ type Example struct {
 }
 
 var OTypeCompMapping = map[string]operator.OType{
-	"5.2": operator.ScaleIn,
 	"7.1": operator.RecoverSystemd,
 	"7.2": operator.Kill,
 	"7.3": operator.DataCorrupted,
@@ -29,6 +28,7 @@ var OTypeCompMapping = map[string]operator.OType{
 	"7.5": operator.Disaster,
 	"7.6": operator.Reboot,
 	"7.7": operator.DiskFull,
+	"9.2": operator.ScaleIn,
 }
 
 func IsCompMapping(idx string) bool {
@@ -107,8 +107,10 @@ func (e Example) scriptIsNotExists() error {
 	return fmt.Errorf("[%s] is not exists, skip", e.Value)
 }
 
+const tableNameIdentification = "${TABLE_NAME}"
+
 func (e Example) replaceTableName(o []byte) string {
 	tableName := strings.Split(e.Value, " ")[1]
 	tableName = fmt.Sprintf("%s.%s", "poc", tableName)
-	return strings.ReplaceAll(string(o), "${TABLE_NAME}", tableName)
+	return strings.ReplaceAll(string(o), tableNameIdentification, tableName)
 }

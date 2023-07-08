@@ -3,7 +3,6 @@ level = "info"
 
 [cluster]
 name = "tidb-test"
-plugin = ""
 
 [mysql]
 host = "10.2.103.202"

@@ -11,12 +11,12 @@ import (
 )
 
 func (s *SSH) AddSSHKey() error {
-	tiupRoot, err := s.WhichTiup()
+	tiupRoot, err := s.WhereTiup()
 	if err != nil {
 		return err
 	}
-	s.Key.Private = privateKeyPath(tiupRoot, s.Cluster.Name)
-	s.Key.Public = publicKeyPath(tiupRoot, S.Cluster.Name)
+	s.sshKey.privateKey = privateKeyPath(tiupRoot, s.Cluster.Name)
+	s.sshKey.publicKey = publicKeyPath(tiupRoot, S.Cluster.Name)
 	return nil
 }
 
@@ -29,14 +29,14 @@ func publicKeyPath(root, clusterName string) string {
 }
 
 func (s *SSH) ParsePrivateKey() (ssh.Signer, error) {
-	file, err := ioutil.ReadFile(s.Key.Private)
+	file, err := ioutil.ReadFile(s.sshKey.privateKey)
 	if err != nil {
 		return nil, err
 	}
 	return ssh.ParsePrivateKey(file)
 }
 
-func (s *SSH) WhichTiup() (string, error) {
+func (s *SSH) WhereTiup() (string, error) {
 	up, err := exec.LookPath("tiup")
 	if err != nil {
 		return "", err
@@ -49,7 +49,7 @@ func (s *SSH) CheckClusterName() error {
 	if !isLinux() {
 		return nil
 	}
-	tiup, err := s.WhichTiup()
+	tiup, err := s.WhereTiup()
 	if err != nil {
 		return err
 	}

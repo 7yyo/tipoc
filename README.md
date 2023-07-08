@@ -2,6 +2,7 @@
 Automated test case tool for TiDB
 
 ## UI
+![ui](https://github.com/7yyo/tipoc/blob/master/img/Screenshot%202023-07-06%20at%2023.57.09.png)
 
 ## configuration
 ```toml[log]
@@ -9,7 +10,6 @@ level = "info"
 
 [cluster]
 name = "tidb-test"
-plugin = ""
 
 [mysql]
 host = "10.2.103.202"

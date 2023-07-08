@@ -128,6 +128,10 @@ func walkTree(tree *widgets.Tree) {
 					node.Value = NewExample(v, comp.NoBody, operator.LoadDataSelectIntoOutFile)
 				case isDataDistribution(v):
 					node.Value = NewExample(v, comp.NoBody, operator.DataDistribution)
+				case isOnlineDDLAddIndex(v):
+					node.Value = NewExample(v, comp.NoBody, operator.OnlineDDLAddIndex)
+				case isInstallSysBench(v):
+					node.Value = NewExample(v, comp.NoBody, operator.InstallSysBench)
 				default:
 					node.Value = NewExample(v, comp.NoBody, operator.Script)
 				}

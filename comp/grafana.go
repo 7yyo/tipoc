@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"gopkg.in/yaml.v2"
+	"io"
+	"os"
 	"path/filepath"
 	"pictorial/etcd"
 	"pictorial/http"
 	"pictorial/log"
 	"pictorial/ssh"
+	"pictorial/util/file"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +23,9 @@ type G struct {
 	Port       int    `json:"port"`
 	DeployPath string `json:"deploy_path"`
 }
+
+//go:embed "resource/*"
+var RenderPlugin embed.FS
 
 func (m *Mapping) GetGrafana() error {
 	rs, err := etcd.GetByPrefix(PdAddr, topologyGrafana)
@@ -38,46 +45,53 @@ func (m *Mapping) GetGrafana() error {
 	return nil
 }
 
-func (c *Component) preCheck() error {
+const pluginName = "plugin-linux-x64-glibc"
 
-	var o []byte
-	var err error
+func (c *Component) installPlugin() error {
 	s := ssh.S
-	plugin := s.Cluster.Plugin
-	pluginName := filepath.Base(plugin)
 	pluginPath := filepath.Join(c.DeployPath, "plugins")
-	pluginSelf := filepath.Join(pluginPath, pluginName)
+	defer func() {
+		if _, err := s.Restart("grafana"); err != nil {
+			log.Logger.Warnf("restart grafana failed: %s", err.Error())
+		}
+	}()
+	ls, err := s.DirWalk(c.Host, pluginPath)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(ls), pluginName) {
+		log.Logger.Infof("grafana image render installed.")
+		return nil
+	}
 
-	if o, err = s.DirWalk(c.Host, pluginPath); err != nil {
+	mergeZip, err := os.Create(fmt.Sprintf("%s.zip", pluginName))
+	if err != nil {
 		return err
 	}
-	if len(o) == 0 && plugin == "" {
-		return fmt.Errorf("plugin & pluginPath is nil, skip render, you can quit now")
-	} else if len(o) != 0 {
-		printPlugins(string(o))
-	} else {
-		log.Logger.Infof("%s is nil, start to set %s.", pluginPath, plugin)
-		target := fmt.Sprintf("%s@%s:%s", s.User, c.Host, pluginPath)
-		if o, err = s.Transfer(plugin, target); err != nil {
+	defer mergeZip.Close()
+
+	idx := []string{"a", "b", "c", "d", "e", "f"}
+
+	for i := 0; i < len(idx); i++ {
+		f, err := RenderPlugin.Open(fmt.Sprintf("resource/%s.zip.a%s", pluginName, idx[i]))
+		if _, err = io.Copy(mergeZip, f); err != nil {
 			return err
 		}
-		if _, err = s.UnZip(c.Host, pluginSelf, pluginPath); err != nil {
-			return err
-		}
-		log.Logger.Infof("%s -> %s complete.", plugin, pluginPath)
 	}
-	if _, err = s.Restart("grafana"); err != nil {
+	if err := file.UnzipPackage(mergeZip.Name(), "./"); err != nil {
 		return err
 	}
-	if err := c.dependencies(); err != nil {
+	target := fmt.Sprintf("%s@%s:%s", s.User, c.Host, pluginPath)
+	log.Logger.Infof("%s -> %s", pluginName, target)
+	if _, err := s.TransferR(pluginName, target); err != nil {
 		return err
 	}
-	return nil
+	return c.dependencies()
 }
 
 func (c *Component) Render(to string, oType string) error {
 	log.Logger.Info("start grafana image render...")
-	if err := c.preCheck(); err != nil {
+	if err := c.installPlugin(); err != nil {
 		return err
 	}
 	tok, err := c.newToken()
@@ -210,10 +224,6 @@ func timeFormat(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05.000")
 }
 
-func printPlugins(o string) {
-	log.Logger.Infof("maybe plugins installed: %s", o)
-}
-
 var dependencies = [2]string{
 	"libatk-bridge*",
 	"libxkbcommon*",
@@ -262,6 +272,9 @@ func getPanels(oType string) (map[string]panel, error) {
 		newPls["qps"] = getTargetPanel(pls, "qps")
 		newPls["pd_uptime"] = getTargetPanel(pls, "pd_uptime")
 		newPls["tikv_uptime"] = getTargetPanel(pls, "tikv_uptime")
+	case "online_ddl_add_index":
+		newPls["duration"] = getTargetPanel(pls, "duration")
+		newPls["qps"] = getTargetPanel(pls, "qps")
 	default:
 		newPls["duration"] = getTargetPanel(pls, "duration")
 		newPls["qps"] = getTargetPanel(pls, "qps")

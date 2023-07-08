@@ -55,7 +55,7 @@ func GetPdAddr() (string, error) {
 	}
 	defer rs.Close()
 	if rs == nil {
-		return "", fmt.Errorf("please confirm that the [pd] exists in the cluster")
+		return "", fmt.Errorf("please confirm that pd node exists in the cluster")
 	}
 	pd := string(rs.Values[0][1].AsString())
 	log.Logger.Debug("pd = %s", pd)

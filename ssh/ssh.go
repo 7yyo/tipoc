@@ -19,31 +19,34 @@ type SSH struct {
 	SshPort  string
 	LogC     chan string
 	Cluster
-	Key
+	sshKey
+	Ctx context.Context
 }
 
 type Cluster struct {
-	Name   string
-	Plugin string
+	Name string
 }
 
-type Key struct {
-	Public  string
-	Private string
+type sshKey struct {
+	publicKey  string
+	privateKey string
 }
 
 var S SSH
+
+const localhost = "localhost"
 
 func (s *SSH) NewSshClient(host string) (*ssh.Client, error) {
 	rs, err := s.ParsePrivateKey()
 	sshConfig := newSshConfig(s.User)
 	if err != nil {
-		log.Logger.Warnf("parse private key: %s failed", s.Key.Private)
 		if s.Password != "" {
-			log.Logger.Warnf("retry password: %s", s.Password)
-			sshConfig.Auth = []ssh.AuthMethod{ssh.Password(s.Password)}
+			sshConfig.Auth = []ssh.AuthMethod{
+				ssh.Password(s.Password),
+			}
+			log.Logger.Warnf("parse privateKey: %s failed, err: %s, retry password: %s", s.sshKey.privateKey, err.Error(), s.Password)
 		} else {
-			return nil, fmt.Errorf("ssh failed, private key: %s, password: %s, please check", s.Private, s.Password)
+			return nil, fmt.Errorf("ssh failed, privateKey: %s, password: %s, please check", s.privateKey, s.Password)
 		}
 	} else {
 		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(rs)}
@@ -95,10 +98,26 @@ func (s *SSH) RunLocal(c string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	s.LogC <- formatCommand(c, "127.0.0.1")
+	s.LogC <- formatCommand(c, localhost)
 	err := cmd.Run()
 	s.LogC <- formatStdout(stdout)
 	s.LogC <- formatStderr(stderr)
+	if err != nil {
+		if _, ok := err.(*ssh.ExitError); ok {
+			return nil, fmt.Errorf(failedMsg, c, err, stdout.String(), stderr.String())
+		} else {
+			return nil, fmt.Errorf(warnMsg, c, err, stdout.String(), stderr.String())
+		}
+	}
+	return stdout.Bytes(), nil
+}
+
+func (s *SSH) RunLocalWithoutListener(c string) ([]byte, error) {
+	cmd := exec.Command("bash", "-c", c)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
 		if _, ok := err.(*ssh.ExitError); ok {
 			return nil, fmt.Errorf(failedMsg, c, err, stdout.String(), stderr.String())
@@ -185,7 +204,7 @@ func (s *SSH) RunLocalWithContext(ctx context.Context, c string, arg []string, f
 		cmd.Stdout = &stdout
 	}
 
-	s.LogC <- formatCommand(c, "127.0.0.1")
+	s.LogC <- formatCommand(c, localhost)
 	s.LogC <- formatStdout(stdout)
 	s.LogC <- formatStderr(stderr)
 
@@ -215,15 +234,16 @@ func isLinux() bool {
 	return runtime.GOOS == "linux"
 }
 
-const ShellLog = "shell.log"
+const shellLog = "shell.log"
 
-func (s *SSH) ShellListener() {
-	if err := os.Remove(ShellLog); err != nil {
+func (s *SSH) ShellListener(ctx context.Context) {
+	defer close(s.LogC)
+	if err := os.Remove(shellLog); err != nil {
 		if !os.IsNotExist(err) {
 			panic(err)
 		}
 	}
-	f, err := os.Create(ShellLog)
+	f, err := os.Create(shellLog)
 	if err != nil {
 		panic(err)
 	}
@@ -231,8 +251,18 @@ func (s *SSH) ShellListener() {
 		select {
 		case s := <-s.LogC:
 			_, _ = f.WriteString(s)
+		case <-ctx.Done():
+			break
 		}
 	}
+}
+
+func (s *SSH) AfterCareShellLog(path string) error {
+	c := fmt.Sprintf("scp -o StrictHostKeyChecking=no -i %s %s %s", s.sshKey.privateKey, shellLog, path)
+	if _, err := s.RunLocalWithoutListener(c); err != nil {
+		return err
+	}
+	return os.Remove(shellLog)
 }
 
 func formatCommand(c string, host string) string {

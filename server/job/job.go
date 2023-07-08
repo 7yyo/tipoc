@@ -64,6 +64,7 @@ var renderJob = []operator.OType{
 	operator.Reboot,
 	operator.DiskFull,
 	operator.DataDistribution,
+	operator.OnlineDDLAddIndex,
 }
 
 func isRenderJob(o operator.OType) bool {
@@ -88,6 +89,7 @@ func New(e map[string][]string, s *widgets.Tree) Job {
 		}
 		return filepath.Join(fp, resultPath)
 	}
+	Ld.IsOver = false
 	c, err := comp.New()
 	if err != nil {
 		panic(err)
@@ -111,17 +113,29 @@ const CompleteSignal = "complete_signal"
 
 func (j *Job) Run() {
 
-	tp := j.tp()
-	j.printSelected(tp)
+	oType := j.tp()
+	ov := operator.GetOTypeValue(oType)
+	j.printSelected(oType)
 	if err := resetDB(); err != nil {
 		j.ErrC <- err
 		return
 	}
 
+	// for job internal load, e.g disk_full
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// for shell listener goroutine
+	shellCtx, shellCancel := context.WithCancel(context.Background())
+	go ssh.S.ShellListener(shellCtx)
 
-	switch tp {
+	defer func() {
+		cancel()
+		shellCancel()
+		time.Sleep(1 * time.Second)
+		j.Channel.CompleteC <- true
+		log.Logger.Infof("complete at %s.", j.resultPath)
+	}()
+
+	switch oType {
 	case operator.Script, operator.OtherScript:
 		j.runScript()
 	case operator.SafetyScript:
@@ -131,7 +145,7 @@ func (j *Job) Run() {
 			j.ErrC <- err
 			return
 		}
-		if isLoadJob(tp) {
+		if isLoadJob(oType) {
 			if Ld.Cmd != "" {
 				ldName := filepath.Join(j.resultPath, "load.log")
 				go Ld.run(ldName, j.Channel.ErrC, j.Channel.StopC)
@@ -140,39 +154,37 @@ func (j *Job) Run() {
 				cntDown("start executing the test case", Ld.Interval)
 			}
 		}
-		switch tp {
+		switch oType {
 		case operator.Disaster:
 			j.runLabel()
 		case operator.LoadDataTPCC, operator.LoadDataImportInto, operator.LoadData, operator.LoadDataSelectIntoOutFile:
 			j.runLoadData()
 		case operator.DataDistribution:
 			j.runDataDistribution()
+		case operator.OnlineDDLAddIndex:
+			j.runOnlineDDL()
+		case operator.InstallSysBench:
+			j.runInstallSysBench()
 		default:
 			j.runComponent(ctx)
 		}
-		if isRenderJob(tp) {
-			cntDown("grafana image render", Ld.Interval)
-			log.Logger.Debug(fmt.Sprintf("load over status: %v", Ld.IsOver))
-			if !Ld.IsOver {
-				j.Channel.StopC <- true
-			}
-			time.Sleep(5 * time.Second)
-			if err := j.components[comp.Grafana][0].Render(j.resultPath, operator.GetOTypeValue(tp)); err != nil {
-				j.ErrC <- err
-				return
-			}
+	}
+	if err := ssh.S.AfterCareShellLog(j.resultPath); err != nil {
+		j.ErrC <- err
+		return
+	}
+	if isRenderJob(oType) {
+		cntDown("grafana image render", Ld.Interval)
+		log.Logger.Debug(fmt.Sprintf("load over status: %v", Ld.IsOver))
+		if !Ld.IsOver {
+			j.Channel.StopC <- true
+		}
+		time.Sleep(5 * time.Second)
+		if err := j.components[comp.Grafana][0].Render(j.resultPath, ov); err != nil {
+			j.ErrC <- err
+			return
 		}
 	}
-	if _, err := ssh.S.Transfer(ssh.ShellLog, j.resultPath); err != nil {
-		j.ErrC <- err
-		return
-	}
-	if err := os.Remove(ssh.ShellLog); err != nil {
-		j.ErrC <- err
-		return
-	}
-	j.Channel.CompleteC <- true
-	log.Logger.Infof("complete at %s.", j.resultPath)
 }
 
 func IsCompleteSignal(err error) bool {
@@ -217,6 +229,7 @@ func (j *Job) runComponent(ctx context.Context) {
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		cnt++
 		e := widget.ChangeToExample(node)
+		ov := operator.GetOTypeValue(e.OType)
 		addr := strings.Trim(e.String(), comp.Leader)
 		var failMsg = "[%s] %s failed: %s"
 		for _, c := range j.components[e.CType] {
@@ -236,7 +249,7 @@ func (j *Job) runComponent(ctx context.Context) {
 					return true
 				}
 				if err = r.Execute(); err != nil {
-					log.Logger.Errorf(failMsg, operator.GetOTypeValue(e.OType), addr, err.Error())
+					log.Logger.Errorf(failMsg, ov, addr, err.Error())
 					return true
 				}
 			}
@@ -362,22 +375,20 @@ func resetDB() error {
 	if _, err := mysql.M.ExecuteSQL("CREATE DATABASE poc"); err != nil {
 		return err
 	}
-	if _, err := mysql.M.ExecuteSQL("SET GLOBAL validate_password.enable = OFF;"); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (j *Job) printSelected(tp operator.OType) {
+func (j *Job) printSelected(oType operator.OType) {
 	log.Logger.Info("you selected:")
+	ov := operator.GetOTypeValue(oType)
 	cnt := 0
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		cnt++
-		switch tp {
+		switch oType {
 		case operator.Script, operator.OtherScript, operator.SafetyScript:
 			log.Logger.Infof("[%d] %s", cnt, node.Value.String())
 		default:
-			log.Logger.Infof("[%d] %s_%s", cnt, operator.GetOTypeValue(tp), node.Value.String())
+			log.Logger.Infof("[%d] %s_%s", cnt, ov, node.Value.String())
 		}
 		return true
 	})

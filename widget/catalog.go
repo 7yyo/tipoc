@@ -29,6 +29,14 @@ func readCatalog() (fs.File, error) {
 	return catalogPath.Open(catalog)
 }
 
+func isOnlineDDLAddIndex(v string) bool {
+	return strings.HasPrefix(v, "3.5")
+}
+
+func isDataDistribution(v string) bool {
+	return strings.HasPrefix(v, "1.19")
+}
+
 func isSafety(v string) bool {
 	return strings.HasPrefix(v, "6")
 }
@@ -49,6 +57,6 @@ func isSelectIntoOutFile(v string) bool {
 	return strings.HasPrefix(v, "8.4")
 }
 
-func isDataDistribution(v string) bool {
-	return strings.HasPrefix(v, "9")
+func isInstallSysBench(v string) bool {
+	return strings.HasPrefix(v, "20.1")
 }

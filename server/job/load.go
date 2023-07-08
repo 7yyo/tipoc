@@ -24,7 +24,7 @@ func (l *Load) run(lgName string, errC chan error, stopLdC chan bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-stopLdC
-		action = fmt.Sprintf("receive kill signal: %s, canel normally.", l.Cmd)
+		action = fmt.Sprintf("receive kill signal, cancel normally: %s.", l.Cmd)
 		cancel()
 	}()
 	if _, err := ssh.S.RunLocalWithContext(ctx, "sh", args, lgName); err != nil {

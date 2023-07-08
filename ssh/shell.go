@@ -12,12 +12,17 @@ func (s *SSH) DirWalk(host, target string) ([]byte, error) {
 }
 
 func (s *SSH) Transfer(t1, t2 string) ([]byte, error) {
-	c := fmt.Sprintf("scp -o StrictHostKeyChecking=no -i %s %s %s", s.Key.Private, t1, t2)
+	c := fmt.Sprintf("scp -o StrictHostKeyChecking=no -i %s %s %s", s.sshKey.privateKey, t1, t2)
+	return s.RunLocal(c)
+}
+
+func (s *SSH) TransferR(t1, t2 string) ([]byte, error) {
+	c := fmt.Sprintf("scp -r -o StrictHostKeyChecking=no -i %s %s %s", s.sshKey.privateKey, t1, t2)
 	return s.RunLocal(c)
 }
 
 func (s *SSH) UnZip(host, obj, path string) ([]byte, error) {
-	c := fmt.Sprintf("unzip %s -d %s", obj, path)
+	c := fmt.Sprintf("unzip -o %s -d %s", obj, path)
 	return s.RunSSH(host, c)
 }
 
