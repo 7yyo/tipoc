@@ -52,7 +52,6 @@ type Mapping struct {
 type Component struct {
 	Host       string
 	Port       string
-	StatusPort string
 	DeployPath string
 	Labels     map[string]string
 	Status     string
@@ -62,13 +61,13 @@ func New() (*Mapping, error) {
 	m := Mapping{
 		Map: make(map[CType][]Component),
 	}
+	if err := m.GetPD(); err != nil {
+		return nil, err
+	}
 	if err := m.GetServer(); err != nil {
 		return nil, err
 	}
 	if err := m.GetStore(); err != nil {
-		return nil, err
-	}
-	if err := m.GetPD(); err != nil {
 		return nil, err
 	}
 	if err := m.GetGrafana(); err != nil {

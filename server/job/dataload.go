@@ -4,149 +4,172 @@ import (
 	"fmt"
 	"github.com/gizak/termui/v3/widgets"
 	"path/filepath"
+	"pictorial/bench"
 	"pictorial/log"
 	"pictorial/mysql"
 	"pictorial/operator"
-	"pictorial/ssh"
+	"pictorial/util/http"
 	"pictorial/widget"
 )
 
-func (j *Job) runLoadData() {
+func (j *Job) runLoadData() error {
+	var err error
 	j.selected.Walk(func(node *widgets.TreeNode) bool {
 		e := widget.ChangeToExample(node)
 		switch e.OType {
 		case operator.LoadDataTPCC:
-			j.runTPCCLoadData()
+			err = j.runTPCCLoadData()
 		case operator.LoadDataImportInto:
-			j.runImportInto()
+			err = j.runImportInto()
 		case operator.LoadData:
-			j.runLoadDataJob()
+			err = j.runLoadDataJob()
 		case operator.LoadDataSelectIntoOutFile:
-			j.runSelectIntoOutFile()
+			err = j.runSelectIntoOutFile()
 		}
 		return true
 	})
-	j.Channel.BarC <- 1
+	return err
 }
 
-func (j *Job) runTPCCLoadData() {
-	tiupRoot, err := ssh.S.WhereTiup()
-	if err != nil {
-		j.Channel.ErrC <- err
-		return
+func (j *Job) runTPCCLoadData() error {
+	ov := operator.GetOTypeValue(operator.LoadDataTPCC)
+	clean := bench.Tpcc{
+		Mysql:      mysql.M,
+		DB:         "poc",
+		Warehouses: 10,
+		Threads:    5,
+		Cmd:        "clean",
 	}
-	warehouses := 10
-	threads := 10
-	lName := fmt.Sprintf("%s/%s.log", j.resultPath, operator.GetOTypeValue(operator.LoadDataTPCC))
-	log.Logger.Infof("[%s] warehouses: %d, threads: %d, database: %s", operator.GetOTypeValue(operator.LoadDataTPCC), warehouses, threads, "tpcc_pp")
-	go Ld.captureLoadLog(lName, j.Channel.ErrC, j.Channel.LdC)
-	tpccCmd := fmt.Sprintf("%s/bin/tiup bench tpcc -H %s -P %s -D tpcc_pp", tiupRoot, mysql.M.Host, mysql.M.Port)
-	cleanCmd := fmt.Sprintf("%s clean", tpccCmd)
-	prepareCmd := fmt.Sprintf("%s --warehouses %d --threads %d prepare", tpccCmd, warehouses, threads)
+	prepare := clean
+	prepare.Cmd = "prepare"
+	logPath := fmt.Sprintf("%s/%s.log", j.resultPath, ov)
+	log.Logger.Infof("[%s] %s", ov, prepare.String())
+	go Ld.captureLoadLog(logPath, j.Channel.ErrC, j.Channel.LdC)
 	originalCmd := Ld.Cmd
 	defer func() {
 		Ld.Cmd = originalCmd
 	}()
-	Ld.Cmd = fmt.Sprintf("%s;%s", cleanCmd, prepareCmd)
-	Ld.run(lName, j.Channel.ErrC, nil)
+	Ld.Cmd = clean.String() + prepare.String()
+	Ld.run(logPath, j.Channel.ErrC, nil)
+	defer func() {
+		j.Channel.BarC <- 1
+	}()
+	return nil
 }
 
-func (j *Job) runImportInto() {
+func (j *Job) runImportInto() error {
 	rowCnt := 1000000
 	colCnt := 10
 	ov := operator.GetOTypeValue(operator.LoadDataImportInto)
+	table := fmt.Sprintf("poc.%s", ov)
 	csvPath := filepath.Join(j.resultPath, fmt.Sprintf("%s.csv", ov))
 	if err := mysql.InitCSV(csvPath, rowCnt, colCnt); err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
 	ddl := mysql.CreateTableSQL(ov, 10)
 	if _, err := mysql.M.ExecuteSQL(ddl.String()); err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
-	sql := fmt.Sprintf(""+
-		"select count(*) from poc.%s; "+
-		"import into poc.import_into from '%s'; "+
-		"select count(*) from poc.%s; "+
-		"select * from poc.%s limit 50;",
-		ov, csvPath, ov, ov)
+	script := mysql.Count(table) +
+		mysql.ImportInto(table, csvPath) +
+		mysql.Count(table) +
+		fmt.Sprintf("select * from %s limit 50", table)
 	log.Logger.Infof("[%s] start import by csv: %s", ov, csvPath)
-	output, err := mysql.M.ExecuteForceWithOutput(sql, "root", "")
+	output, err := mysql.M.ExecuteForceWithOutput(script, mysql.M.User, mysql.M.Password)
 	if err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
-	j.writeResultFile(ov, 1, 0, output)
+	defer j.writeResultFile(ov, 1, 0, output)
 	j.Channel.BarC <- 1
+	return nil
 }
 
-func (j *Job) runLoadDataJob() {
+func (j *Job) runLoadDataJob() error {
 	ov := operator.GetOTypeValue(operator.LoadData)
 	csvPath := filepath.Join(j.resultPath, fmt.Sprintf("%s.csv", ov))
 	rowCnt := 50000
 	colCnt := 10
+	table := fmt.Sprintf("poc.%s", ov)
 	if err := mysql.InitCSV(csvPath, rowCnt, colCnt); err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
 	ddl := mysql.CreateTableSQL(ov, 10)
 	if _, err := mysql.M.ExecuteSQL(ddl.String()); err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
-	sql := fmt.Sprintf(""+
-		"select count(*) from poc.%s; "+
-		"load data local infile '%s' into table poc.load_data fields terminated by ','; "+
-		"select count(*) from poc.%s; "+
-		"select * from poc.%s limit 50;",
-		ov, csvPath, ov, ov)
-	log.Logger.Infof("start load_data")
-	output, err := mysql.M.ExecuteForceWithOutput(sql, "root", "")
+	sql := mysql.Count(table) + mysql.LoadData(table, csvPath) + mysql.Count(table)
+	log.Logger.Infof("[%s] %s", ov, mysql.LoadData(table, csvPath))
+	output, err := mysql.M.ExecuteForceWithOutput(sql, mysql.M.User, mysql.M.Password)
 	if err != nil {
-		j.Channel.ErrC <- err
-		return
+		return err
 	}
-	j.writeResultFile(ov, 1, 0, output)
-	j.Channel.BarC <- 1
+	defer func() {
+		j.writeResultFile(ov, 1, 0, output)
+		j.Channel.BarC <- 1
+	}()
+	return nil
 }
 
-func (j *Job) runSelectIntoOutFile() {
+func (j *Job) runSelectIntoOutFile() error {
 	ov := operator.GetOTypeValue(operator.LoadDataSelectIntoOutFile)
-	j.runInstallSysBench()
-	load := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "1000000", "1", "5", "prepare")
-	log.Logger.Infof("[%s] %s", ov, load)
-	if _, err := ssh.S.RunLocal(load); err != nil {
-		j.ErrC <- err
-		return
+	hit, err := http.MatchIp()
+	if !hit {
+		return fmt.Errorf("[%s] please connect the tidb-server on this server, If not, deploy one.", ov)
 	}
+	if err := bench.InstallSysBench(); err != nil {
+		return err
+	}
+	sb := bench.Sysbench{
+		Test:      bench.OltpInsert,
+		Mysql:     mysql.M,
+		Db:        "poc",
+		TableSize: 1000000,
+		Tables:    1,
+		Threads:   5,
+		Cmd:       "prepare",
+	}
+	log.Logger.Infof("[%s] %s", ov, sb.String())
+	if _, err := sb.Run(); err != nil {
+		return err
+	}
+	table := "poc.sbtest1"
 	csvPath := filepath.Join(j.resultPath, fmt.Sprintf("%s.csv", ov))
-	log.Logger.Infof("[%s] start dump data from table: %s", ov, ov)
-	sql := fmt.Sprintf(""+
-		"select count(*) from poc.sbtest1;"+
-		"select * from poc.sbtest1 into outfile '%s' fields terminated by ',';",
-		csvPath)
-	output, err := mysql.M.ExecuteForceWithOutput(sql, "root", "")
+	log.Logger.Infof("[%s] start dump data from table: %s", ov, table)
+	sql := mysql.Count(table) + mysql.SelectInfoFile(table, csvPath)
+	output, err := mysql.M.ExecuteForceWithOutput(sql, mysql.M.User, mysql.M.Password)
 	if err != nil {
-		j.ErrC <- err
-		return
+		return err
 	}
-	j.writeResultFile(ov, 1, 0, output)
-	j.Channel.BarC <- 1
+	defer func() {
+		j.writeResultFile(ov, 1, 0, output)
+		j.Channel.BarC <- 1
+	}()
+	return nil
 }
 
-func (j *Job) runDataDistribution() {
+func (j *Job) runDataDistribution() error {
 	ov := operator.GetOTypeValue(operator.DataDistribution)
 	lName := fmt.Sprintf("%s/%s.log", j.resultPath, ov)
-	sysbench := fmt.Sprintf(oltpInsert, mysql.M.Host, mysql.M.Port, mysql.M.User, mysql.M.Password, "poc", "10000000", "1", "5", "prepare")
-	log.Logger.Infof("[%s] %s", ov, sysbench)
-	go Ld.captureLoadLog(lName, j.Channel.ErrC, j.Channel.LdC)
-	j.runInstallSysBench()
+	sb := bench.Sysbench{
+		Test:      bench.OltpInsert,
+		Mysql:     mysql.M,
+		Db:        "poc",
+		TableSize: 10000000,
+		Tables:    1,
+		Threads:   5,
+		Cmd:       "prepare",
+	}
+	log.Logger.Infof("[%s] %s", ov, sb.String())
+	if err := bench.InstallSysBench(); err != nil {
+		return err
+	}
 	originalCmd := Ld.Cmd
 	defer func() {
 		Ld.Cmd = originalCmd
 	}()
-	Ld.Cmd = sysbench
+	Ld.Cmd = sb.String()
+	go Ld.captureLoadLog(lName, j.Channel.ErrC, j.Channel.LdC)
 	Ld.run(lName, j.Channel.ErrC, nil)
 	j.BarC <- 1
+	return nil
 }

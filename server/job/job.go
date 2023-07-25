@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"pictorial/bench"
 	"pictorial/comp"
 	"pictorial/log"
 	"pictorial/mysql"
@@ -65,6 +66,7 @@ var renderJob = []operator.OType{
 	operator.DiskFull,
 	operator.DataDistribution,
 	operator.OnlineDDLAddIndex,
+	operator.OnlineDDLModifyColumn,
 }
 
 func isRenderJob(o operator.OType) bool {
@@ -132,7 +134,7 @@ func (j *Job) Run() {
 		shellCancel()
 		time.Sleep(1 * time.Second)
 		j.Channel.CompleteC <- true
-		log.Logger.Infof("complete at %s.", j.resultPath)
+		log.Logger.Infof("complete, result at %s.", j.resultPath)
 	}()
 
 	switch oType {
@@ -154,31 +156,40 @@ func (j *Job) Run() {
 				cntDown("start executing the test case", Ld.Interval)
 			}
 		}
+		var err error
 		switch oType {
 		case operator.DataSeparation:
-			j.runDataSeparation()
+			err = j.runDataSeparation()
+		case operator.FlashBackCluster:
+			err = j.runFlashbackCluster()
+		case operator.GeneralLog:
+			err = j.runGeneralLogJob()
 		case operator.Disaster:
 			j.runLabel()
 		case operator.LoadDataTPCC, operator.LoadDataImportInto, operator.LoadData, operator.LoadDataSelectIntoOutFile:
-			j.runLoadData()
+			err = j.runLoadData()
 		case operator.DataDistribution:
-			j.runDataDistribution()
-		case operator.OnlineDDLAddIndex:
-			j.runOnlineDDL()
+			err = j.runDataDistribution()
+		case operator.OnlineDDLAddIndex, operator.AddIndexPerformance, operator.OnlineDDLModifyColumn:
+			err = j.runOnlineDDL()
 		case operator.InstallSysBench:
-			j.runInstallSysBench()
+			err = bench.InstallSysBench()
 		default:
 			j.runComponent(ctx)
 		}
+		if err != nil {
+			j.ErrC <- err
+		}
 	}
+
 	if err := ssh.S.AfterCareShellLog(j.resultPath); err != nil {
 		j.ErrC <- err
 		return
 	}
 	if isRenderJob(oType) {
 		cntDown("grafana image render", Ld.Interval)
-		log.Logger.Debug(fmt.Sprintf("load over status: %v", Ld.IsOver))
-		if !Ld.IsOver {
+		log.Logger.Debug(fmt.Sprintf("load over status: %v, cmd: %s", Ld.IsOver, Ld.Cmd))
+		if !Ld.IsOver && Ld.Cmd != "" {
 			j.Channel.StopC <- true
 		}
 		time.Sleep(1 * time.Second)
@@ -208,7 +219,7 @@ func (j *Job) runScript() {
 			go func(sql string) {
 				defer wg.Done()
 				n := atomic.AddInt32(&idx, 1)
-				output, err := mysql.M.ExecuteForceWithOutput(sql, "root", "")
+				output, err := mysql.M.ExecuteForceWithOutput(sql, mysql.M.User, mysql.M.Password)
 				if err != nil {
 					errOut = err.Error()
 				}
@@ -235,7 +246,7 @@ func (j *Job) runComponent(ctx context.Context) {
 		addr := strings.Trim(e.String(), comp.Leader)
 		var failMsg = "[%s] %s failed: %s"
 		for _, c := range j.components[e.CType] {
-			c.Port = strings.Trim(c.Port, comp.Leader)
+			c.Port = comp.CleanLeaderFlag(c.Port)
 			if addr == net.JoinHostPort(c.Host, c.Port) {
 				b := operator.Builder{
 					OType:      e.OType,
@@ -310,49 +321,6 @@ func (j *Job) writeResultFile(name string, len, n int, output []string) {
 	}
 }
 
-const rootUser = "## root"
-const tidbUser = "## tidb_user"
-const tidbUserName = "tidb_user"
-const tidbUserPassword = "tidb_password"
-
-func (j *Job) runSafety() {
-	var cnt int
-	j.selected.Walk(func(i *widgets.TreeNode) bool {
-		name := i.Value.String()
-		scripts := j.examples[i.Value.String()]
-		var err error
-		var output []string
-		var errOutput string
-		for i, sql := range scripts {
-			user := strings.Split(sql, "\n")[0]
-			sql = strings.Trim(sql, "\n")
-			switch {
-			case strings.Contains(user, rootUser):
-				sql = strings.Trim(sql, fmt.Sprintf("%s\n", rootUser))
-				output, err = mysql.M.ExecuteForceWithOutput(sql, "root", "")
-			case strings.Contains(user, tidbUser):
-				sql = strings.Trim(sql, fmt.Sprintf("%s\n", tidbUser))
-				output, err = mysql.M.ExecuteForceWithOutput(sql, tidbUserName, tidbUserPassword)
-			default:
-				err = fmt.Errorf("invalid username, please use 'root' and 'tidb_user'")
-			}
-			if err != nil {
-				errOutput = err.Error()
-			}
-			j.writeResultFile(name, len(scripts), i, output)
-		}
-		if errOutput != "" {
-			log.Logger.Infof("[warn] %s: %s", name, errOutput)
-		} else {
-			log.Logger.Infof("[pass] %s", name)
-		}
-		cnt++
-		j.Channel.BarC <- cnt
-		return true
-	})
-
-}
-
 func (j *Job) createOTypeResult() error {
 	result := fmt.Sprintf("%s/%s_%s", resultPath, j.selected.Title, log.DateFormat())
 	if err := os.MkdirAll(result, os.ModePerm); err != nil {
@@ -377,6 +345,7 @@ func resetDB() error {
 	if _, err := mysql.M.ExecuteSQL("CREATE DATABASE poc"); err != nil {
 		return err
 	}
+	log.Logger.Info("reset db complete.")
 	return nil
 }
 

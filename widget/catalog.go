@@ -3,7 +3,6 @@ package widget
 import (
 	"embed"
 	"io/fs"
-	"strings"
 )
 
 //go:embed "catalog"
@@ -27,40 +26,4 @@ func newCatalog(v string) *Catalog {
 
 func readCatalog() (fs.File, error) {
 	return catalogPath.Open(catalog)
-}
-
-func isDataSeparation(v string) bool {
-	return strings.HasPrefix(v, "1.16.1")
-}
-
-func isDataDistribution(v string) bool {
-	return strings.HasPrefix(v, "1.19")
-}
-
-func isOnlineDDLAddIndex(v string) bool {
-	return strings.HasPrefix(v, "3.5")
-}
-
-func isSafety(v string) bool {
-	return strings.HasPrefix(v, "6")
-}
-
-func isLoadDataTPCC(v string) bool {
-	return strings.HasPrefix(v, "8.1")
-}
-
-func isLoadDataImportInto(v string) bool {
-	return strings.HasPrefix(v, "8.2")
-}
-
-func isLoadData(v string) bool {
-	return strings.HasPrefix(v, "8.3")
-}
-
-func isSelectIntoOutFile(v string) bool {
-	return strings.HasPrefix(v, "8.4")
-}
-
-func isInstallSysBench(v string) bool {
-	return strings.HasPrefix(v, "20.1")
 }

@@ -22,6 +22,13 @@ const (
 	Script OType = iota
 	SafetyScript
 	OtherScript
+	DataSeparation
+	DataDistribution
+	FlashBackCluster
+	GeneralLog
+	OnlineDDLAddIndex
+	OnlineDDLModifyColumn
+	AddIndexPerformance
 	ScaleIn
 	Kill
 	DataCorrupted
@@ -34,9 +41,6 @@ const (
 	LoadDataImportInto
 	LoadData
 	LoadDataSelectIntoOutFile
-	DataSeparation
-	DataDistribution
-	OnlineDDLAddIndex
 	InstallSysBench
 )
 
@@ -76,10 +80,18 @@ func GetOTypeValue(o OType) string {
 		return "data_separation"
 	case DataDistribution:
 		return "data_distribution"
+	case FlashBackCluster:
+		return "flashback_cluster"
+	case GeneralLog:
+		return "general_log"
 	case OnlineDDLAddIndex:
 		return "online_ddl_add_index"
+	case OnlineDDLModifyColumn:
+		return "online_ddl_modify_column"
+	case AddIndexPerformance:
+		return "add_index_performance"
 	case InstallSysBench:
-		return "install_sys_bench"
+		return "install_sysbench"
 	default:
 		return ""
 	}

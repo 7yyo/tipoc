@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"pictorial/http"
 	"pictorial/log"
 	"pictorial/mysql"
+	"pictorial/util/http"
 	"strings"
 )
 
@@ -68,5 +68,5 @@ func GetPdAddr() (string, error) {
 }
 
 func CleanLeaderFlag(v string) string {
-	return strings.Trim(v, "(L)")
+	return strings.Trim(v, Leader)
 }

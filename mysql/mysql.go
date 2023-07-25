@@ -64,6 +64,7 @@ func (m *MySQL) args(sql string, user, password string) []string {
 func (m *MySQL) ExecuteForceWithOutput(sql, user, password string) ([]string, error) {
 	var stdout, stderr bytes.Buffer
 	cmdArgs := m.args(sql, user, password)
+	log.Logger.Debug(sql)
 	cmd := exec.Command(mysqlCmd, cmdArgs...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

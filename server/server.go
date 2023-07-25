@@ -8,7 +8,7 @@ import (
 	"pictorial/widget"
 )
 
-const outputLog = "output.log"
+const logName = "output.log"
 
 type Server struct {
 	w *widget.Widget
@@ -16,7 +16,7 @@ type Server struct {
 
 func New() {
 
-	log.New(outputLog)
+	log.New(logName)
 
 	if err := ui.Init(); err != nil {
 		panic(err)
@@ -168,7 +168,7 @@ func prepare() error {
 }
 
 func (s *Server) captureLog() {
-	t, err := log.Track(outputLog)
+	t, err := log.Track(logName)
 	if err != nil {
 		panic(err)
 	}

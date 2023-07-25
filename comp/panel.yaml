@@ -51,3 +51,9 @@ io_util:
   tab: "overview"
   name: "io_util"
   org: "eDbRZpnWk"
+
+ddl_duration:
+  id: "9"
+  tab: "tidb"
+  name: "ddl_duration"
+  org: "000000011"

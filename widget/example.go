@@ -31,7 +31,7 @@ var OTypeCompMapping = map[string]operator.OType{
 	"9.2": operator.ScaleIn,
 }
 
-func IsCompMapping(idx string) bool {
+func IsCompCatalogMapping(idx string) bool {
 	if _, ok := OTypeCompMapping[idx]; ok {
 		return true
 	}
@@ -52,6 +52,10 @@ func NewExample(v string, c comp.CType, o operator.OType) *Example {
 
 func getIdxByValue(v string) string {
 	return strings.Split(v, " ")[0]
+}
+
+func getNameByValue(v string) string {
+	return strings.Split(v, " ")[1]
 }
 
 func (e Example) isConflict(o operator.OType) bool {

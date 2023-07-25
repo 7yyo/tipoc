@@ -46,6 +46,11 @@ func (s *SSH) YumInstall(host, repo string) ([]byte, error) {
 	return s.RunSSH(host, c)
 }
 
+func (s *SSH) GrepTailN(host, path string, cnt int) ([]byte, error) {
+	c := fmt.Sprintf("grep %s %s | tail -n %d", host, path, cnt)
+	return s.RunSSH(host, c)
+}
+
 func (s *SSH) GetProcessIDByPort(host, port string) (string, error) {
 	c := fmt.Sprintf("sudo fuser -n tcp %s/tcp | tail -n 1", port)
 	p, _ := s.RunSSH(host, c)

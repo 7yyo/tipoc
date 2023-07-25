@@ -1,0 +1,1 @@
+SELECT TIMESTAMPDIFF(MONTH, '2023-01-01', '2023-06-03') AS months_between;

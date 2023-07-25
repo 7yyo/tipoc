@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/hpcloud/tail v1.0.0
 	github.com/pelletier/go-toml v1.9.5
+	github.com/sapessi/termui v2.2.0+incompatible
 	github.com/sirupsen/logrus v1.8.1
 	go.etcd.io/etcd v3.3.27+incompatible
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
@@ -31,6 +32,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
+	github.com/maruel/panicparse v1.6.2 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
 	github.com/nsf/termbox-go v0.0.0-20190121233118-02980233997d // indirect

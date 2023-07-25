@@ -5,7 +5,8 @@ Automated test case tool for TiDB
 ![ui](https://github.com/7yyo/tipoc/blob/master/img/Screenshot%202023-07-06%20at%2023.57.09.png)
 
 ## configuration
-```toml[log]
+```toml
+[log]
 level = "info"
 
 [cluster]
@@ -30,8 +31,8 @@ sleep = 2
 dir = "/go/src/pictorial/other"
 ```
 
-## how 
-
+## how
+Deployed on the tiup server where the tidb cluster is located, sudo permission is required
 ```shell
 go build -o tipoc main/main.go
 ./tipoc -c config.toml
@@ -56,7 +57,8 @@ go build -o tipoc main/main.go
 - [x] scale in
 #### online ddl
 - [x] online add index
-- [ ] online modify column
+- [x] online modify column
+- [x] add index performance
 #### htap
 - [ ] htap workload
 #### auto install

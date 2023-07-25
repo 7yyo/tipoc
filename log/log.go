@@ -55,3 +55,10 @@ func DateFormat() string {
 	hour, min, sec := now.Clock()
 	return fmt.Sprintf("%d-%02d-%02d_%02d:%02d:%02d", year, int(month), day, hour, min, sec)
 }
+
+func Timestamp() string {
+	now := time.Now()
+	year, month, day := now.Date()
+	hour, min, sec := now.Clock()
+	return fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", year, int(month), day, hour, min, sec)
+}

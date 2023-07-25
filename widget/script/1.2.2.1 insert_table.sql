@@ -1,0 +1,5 @@
+CREATE TABLE ${TABLE_NAME} (id INT, name VARCHAR(11), age INT);
+INSERT INTO ${TABLE_NAME} VALUES (1, 'Green', 18);
+INSERT INTO ${TABLE_NAME} VALUES (2, 'Lucy', 14), (3, 'Jim', 24), (4, 'Tom', 16);
+SELECT * FROM ${TABLE_NAME};
+

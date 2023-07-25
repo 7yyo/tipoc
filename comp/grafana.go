@@ -10,10 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"pictorial/etcd"
-	"pictorial/http"
 	"pictorial/log"
 	"pictorial/ssh"
 	"pictorial/util/file"
+	"pictorial/util/http"
 	"strconv"
 	"strings"
 	"time"
@@ -287,9 +287,10 @@ func getPanels(oType string) (map[string]panel, error) {
 		newPls["qps"] = getTargetPanel(pls, "qps")
 		newPls["pd_uptime"] = getTargetPanel(pls, "pd_uptime")
 		newPls["tikv_uptime"] = getTargetPanel(pls, "tikv_uptime")
-	case "online_ddl_add_index":
+	case "online_ddl_add_index", "online_add_modify_column":
 		newPls["duration"] = getTargetPanel(pls, "duration")
 		newPls["qps"] = getTargetPanel(pls, "qps")
+		newPls["ddl_duration"] = getTargetPanel(pls, "ddl_duration")
 	default:
 		newPls["duration"] = getTargetPanel(pls, "duration")
 		newPls["qps"] = getTargetPanel(pls, "qps")

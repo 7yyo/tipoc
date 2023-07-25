@@ -47,9 +47,10 @@ func (l *Load) captureLoadLog(name string, errC chan error, ldC chan string) {
 
 func cntDown(msg string, cnt int64) {
 	if cnt == 0 {
+		log.Logger.Infof("[%s] right now...", msg)
 		return
 	}
-	log.Logger.Infof("%s after %d minutes...", msg, cnt)
+	log.Logger.Infof("[%s] after %d minutes...", msg, cnt)
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {

@@ -1,22 +1,39 @@
 1 basic
     1.1 data_type
-        1.1.1 numeric_type
-        1.1.2 date_type
-        1.1.3 boolean_type
-        1.1.4 varchar_type
-        1.1.5 json_type
-        1.1.6 binary_type
+            1.1.1 numeric_type
+            1.1.2 date_type
+            1.1.3 boolean_type
+            1.1.4 varchar_type
+            1.1.5 json_type
+            1.1.6 binary_type
+            1.1.7 clob_type
     1.2 sql
-        1.2.1 dml
-        1.2.2 left_join
-        1.2.3 right_join
-        1.2.4 inner_join
-        1.2.5 insert_select
-        1.2.6 cte
-        1.2.7 case_when
-        1.2.8 full_join
-        1.2.9 page_query
-        1.2.10 replace_into
+            1.2.1 select_dml
+                1.2.1.1 select_table
+                1.2.1.2 select_group_by
+                1.2.1.3 select_order_by
+                1.2.1.4 select_sub_query
+                1.2.1.5 select_limit
+            1.2.2 insert_dml
+                1.2.2.1 insert_table
+                1.2.2.2 insert_into_select
+                1.2.2.3 insert_on_duplicate_key
+                1.2.2.4 replace_into
+                1.2.2.5 merge_into
+            1.2.3 update_dml
+                1.2.3.1 update_table
+            1.2.4 delete_dml
+                1.2.4.1 delete_table
+            1.2.5 join
+                1.2.5.1 inner_join
+                1.2.5.2 left_join
+                1.2.5.3 right_join
+                1.2.5.4 full_join
+            1.2.6 union
+            1.2.7 cte
+                1.2.7.1 recursion
+                1.2.7.2 non_recursion
+            1.2.8 case_when
     1.3 character_set
         1.3.1 utf8
         1.3.2 gbk
@@ -56,6 +73,7 @@
         1.9.5 constraint_check
         1.9.6 foreign_key_constraint
         1.9.7 drop_constraint
+        1.9.8 check_constraint
     1.10 view
     1.11 function
         1.11.1 numeric_function
@@ -67,6 +85,10 @@
         1.11.5 aggregate_function
         1.11.6 conversion_function
         1.11.7 null_function
+        1.11.8 months_between_function
+        1.11.9 add_months_function
+        1.11.10 decode_function
+        1.11.11 list_agg_function
     1.12 index
         1.12.1 unique_index
         1.12.2 joint_index
@@ -75,6 +97,7 @@
         1.12.5 secondary_index
         1.12.6 multi_value_index
         1.12.7 merge_index
+        1.12.8 single_table_multi_index
     1.13 cache_table
     1.14 temporary_table
         1.14.1 local_temporary_table
@@ -82,7 +105,7 @@
     1.15 time_zone
     1.16 placement_rule
         1.16.1 data_separation
-    1.19 data_distribution
+    1.17 data_distribution
 2 distributed_transaction
     2.1 acid
         2.1.1 atomicity
@@ -100,14 +123,22 @@
     2.7 lock_view
     2.8 savepoint
     2.9 flashback
-        2.9.1 truncate_table
-        2.9.2 drop_table
+        2.9.1 flashback_truncate_table
+        2.9.2 flashback_drop_table
+        2.9.3 flashback_cluster
+    2.10 table_lock
+    2.11 select_for_update
 3 ddl
     3.1 add_index
     3.2 drop_index
     3.3 modify_column
     3.4 auto_increment
     3.5 online_ddl_add_index
+    3.6 add_index_performance
+    3.7 online_ddl_modify_column
+    3.8 create_database
+    3.9 drop_database
+    3.10 create_table
 4 operations
     4.1 slow_query
     4.2 analyze
@@ -116,6 +147,7 @@
         4.2.3 lock_stats
     4.3 variables
     4.4 online_configuration
+    4.5 general_log
 5 htap
     5.1 htap
     5.3 mpp
@@ -129,6 +161,7 @@
         6.2.2 drop_role
         6.2.3 role_authority_management
     6.3 password_complexity
+    6.4 login_failure_limit
 7 high_availability
     7.1 recover_systemd
     7.2 kill

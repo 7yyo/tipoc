@@ -20,5 +20,5 @@ interval = 0
 sleep = 2
 
 [other]
-dir = "/go/src/pictorial/other"
+dir = ""
 

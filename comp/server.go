@@ -4,44 +4,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"pictorial/http"
+	"pictorial/etcd"
 	"pictorial/mysql"
 	"strconv"
+	"strings"
 )
 
-type ServerInfo struct {
-	IP            string `json:"ip"`
-	ListeningPort int    `json:"listening_port"`
-	StatusPort    int    `json:"status_port"`
-}
-
-type ServersInfo struct {
-	ServersNum     int                   `json:"servers_num"`
-	AllServersInfo map[string]ServerInfo `json:"all_servers_info"`
+type Server struct {
+	DeployPath string `json:"deploy_path"`
 }
 
 func (m *Mapping) GetServer() error {
-	host, statusPort, err := GetTiDBHostStatusPort()
+	pd := m.Map[PD][0]
+	port := CleanLeaderFlag(pd.Port)
+	pdAddr := net.JoinHostPort(pd.Host, port)
+	rs, err := etcd.GetByPrefix(pdAddr, "/topology/tidb/")
 	if err != nil {
 		return err
 	}
-	addr := net.JoinHostPort(host, statusPort)
-	r, err := http.Get(fmt.Sprintf(tidbAllInfoUrl, addr))
-	if err != nil {
-		return err
-	}
-	var ss ServersInfo
-	if err := json.Unmarshal(r, &ss); err != nil {
-		return err
-	}
-	cs := make([]Component, 0)
-	for _, s := range ss.AllServersInfo {
-		c := Component{
-			Host:       s.IP,
-			Port:       strconv.Itoa(s.ListeningPort),
-			StatusPort: strconv.Itoa(s.StatusPort),
+	var cs []Component
+	for _, v := range rs.Kvs {
+		switch {
+		case strings.HasSuffix(string(v.Key), "info"):
+			var c Component
+			var s Server
+			addr := strings.Split(string(v.Key), "/")[3]
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return err
+			}
+			c.Host = host
+			c.Port = port
+			if err := json.Unmarshal(v.Value, &s); err != nil {
+				return err
+			}
+			deployPath := strings.TrimSuffix(s.DeployPath, "/bin")
+			c.DeployPath = deployPath
+			cs = append(cs, c)
 		}
-		cs = append(cs, c)
 	}
 	m.Map[TiDB] = cs
 	return nil

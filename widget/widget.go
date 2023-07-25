@@ -51,7 +51,7 @@ func BuildTree() (*widgets.Tree, error) {
 	t.SetRect(0, 0, x/3, y/2)
 	t.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	t.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorBlue,
+		Fg:       ui.ColorYellow,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}
@@ -68,7 +68,7 @@ func NewSelected() *widgets.Tree {
 	c.SetRect(x/3, 0, 2*x/3, y/2)
 	c.Block.BorderStyle = ui.NewStyle(ui.ColorClear)
 	c.SelectedRowStyle = ui.Style{
-		Fg:       ui.ColorBlue,
+		Fg:       ui.ColorYellow,
 		Bg:       ui.ColorClear,
 		Modifier: ui.ModifierBold,
 	}

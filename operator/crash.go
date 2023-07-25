@@ -23,6 +23,7 @@ const crash = "crash"
 func (c *crashOperator) Execute() error {
 	cType := comp.GetCTypeValue(c.cType)
 	cType = comp.CleanLeaderFlag(cType)
+	ov := GetOTypeValue(Crash)
 	if cType == "tiflash" {
 		port, err := comp.GetTiFlashPort(c.host, c.deployPath)
 		if err != nil {
@@ -41,7 +42,7 @@ func (c *crashOperator) Execute() error {
 		return err
 	}
 	if processID == "" {
-		log.Logger.Warnf("[%s] [%s] %s is offline, skip.", crash, cType, addr)
+		log.Logger.Warnf("[%s] [%s] %s is offline, skip.", ov, cType, addr)
 		return nil
 	}
 	log.Logger.Infof("[%s] [%s] [%s] - %v", crash, cType, addr, processID)

@@ -102,6 +102,24 @@ func appendOther(treeNodes *[]*widgets.TreeNode) error {
 	return nil
 }
 
+func GetJobMapping() map[string]operator.OType {
+	return map[string]operator.OType{
+		"1.16.1": operator.DataSeparation,
+		"1.17":   operator.DataDistribution,
+		"2.9.3":  operator.FlashBackCluster,
+		"3.5":    operator.OnlineDDLAddIndex,
+		"3.6":    operator.AddIndexPerformance,
+		"3.7":    operator.OnlineDDLModifyColumn,
+		"4.5":    operator.GeneralLog,
+		"6":      operator.SafetyScript,
+		"8.1":    operator.LoadDataTPCC,
+		"8.2":    operator.LoadDataImportInto,
+		"8.3":    operator.LoadData,
+		"8.4":    operator.LoadDataSelectIntoOutFile,
+		"20.1":   operator.InstallSysBench,
+	}
+}
+
 func walkTree(tree *widgets.Tree) {
 	tree.Walk(func(node *widgets.TreeNode) bool {
 		v := node.Value.String()
@@ -112,29 +130,13 @@ func walkTree(tree *widgets.Tree) {
 			node.Value = newCatalog(v)
 		} else {
 			idx := getIdxByValue(v)
-			if IsCompMapping(idx) {
+			if IsCompCatalogMapping(idx) {
 				node.Value = newCatalog(v)
 			} else {
-				switch {
-				case isSafety(v):
-					node.Value = NewExample(v, comp.NoBody, operator.SafetyScript)
-				case isLoadDataTPCC(v):
-					node.Value = NewExample(v, comp.NoBody, operator.LoadDataTPCC)
-				case isLoadDataImportInto(v):
-					node.Value = NewExample(v, comp.NoBody, operator.LoadDataImportInto)
-				case isLoadData(v):
-					node.Value = NewExample(v, comp.NoBody, operator.LoadData)
-				case isSelectIntoOutFile(v):
-					node.Value = NewExample(v, comp.NoBody, operator.LoadDataSelectIntoOutFile)
-				case isDataSeparation(v):
-					node.Value = NewExample(v, comp.NoBody, operator.DataSeparation)
-				case isDataDistribution(v):
-					node.Value = NewExample(v, comp.NoBody, operator.DataDistribution)
-				case isOnlineDDLAddIndex(v):
-					node.Value = NewExample(v, comp.NoBody, operator.OnlineDDLAddIndex)
-				case isInstallSysBench(v):
-					node.Value = NewExample(v, comp.NoBody, operator.InstallSysBench)
-				default:
+				jobMapping := GetJobMapping()
+				if oType, ok := jobMapping[idx]; ok {
+					node.Value = NewExample(v, comp.NoBody, oType)
+				} else {
 					node.Value = NewExample(v, comp.NoBody, operator.Script)
 				}
 			}
@@ -154,7 +156,7 @@ func appendComponent(tree *widgets.Tree) error {
 		switch node.Value.(type) {
 		case *Catalog:
 			idx := getIdxByValue(node.Value.String())
-			if IsCompMapping(idx) {
+			if IsCompCatalogMapping(idx) {
 				oTp = OTypeCompMapping[idx]
 				switch oTp {
 				case operator.Disaster:

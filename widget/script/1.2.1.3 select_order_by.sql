@@ -1,0 +1,3 @@
+CREATE TABLE ${TABLE_NAME} (id INT PRIMARY KEY , name VARCHAR(11), age INT);
+INSERT INTO ${TABLE_NAME} VALUES (1, 'Jim', 18), (100, 'Green', 18), (3, 'Tom', 24), (4, 'Lucy', 8);
+SELECT * FROM ${TABLE_NAME} ORDER BY id DESC;
